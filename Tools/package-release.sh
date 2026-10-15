@@ -48,9 +48,18 @@ fi
 
 ARCHS="$(lipo -archs "$APP/Contents/MacOS/RDM-ARM")"
 echo "==> arch      $ARCHS"
+
+# The published artifact has to run on both Apple silicon and Intel, and both the
+# file name and the install note claim it does. Checking only for arm64 would let
+# a `--no-build` run reuse an arm64-only bundle and ship a zip that says
+# "universal" on the label while failing on half the machines it is sent to.
 case "$ARCHS" in
-  *arm64*) ;;
+  *arm64*)  ;;
   *) echo "error: build is missing arm64" >&2; exit 1 ;;
+esac
+case "$ARCHS" in
+  *x86_64*) ;;
+  *) echo "error: build is missing x86_64 — re-run without --no-build" >&2; exit 1 ;;
 esac
 
 # ---------------------------------------------------------------- stage
@@ -94,7 +103,7 @@ RDM-ARM $VERSION —— 安装说明
     /Applications/RDM-ARM.app/Contents/MacOS/RDM-ARM -lm      # 列出全部模式
     /Applications/RDM-ARM.app/Contents/MacOS/RDM-ARM --selftest   # 自检
 
-系统要求：macOS 13.0 或更高。$ARCHS 通用二进制。
+系统要求：macOS 13.0 或更高。通用二进制（arm64 + x86_64）。
 EOF
 
 # ---------------------------------------------------------------- zip

@@ -54,13 +54,15 @@ jobs:
             *) echo "::error::x86_64 slice missing"; exit 1 ;;
           esac
 
-      - name: Verify the version in build.sh matches AppInfo.swift
+      - name: Verify the version is consistent everywhere
         run: |
           set -euo pipefail
           SH="$(sed -n 's/^VERSION="\([^"]*\)".*/\1/p' build.sh | head -1)"
           SW="$(sed -n 's/.*static let version = "\([^"]*\)".*/\1/p' Sources/Core/AppInfo.swift | head -1)"
-          echo "build.sh=$SH  AppInfo.swift=$SW"
-          test "$SH" = "$SW" || { echo "::error::version drift"; exit 1; }
+          PL="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)"
+          echo "build.sh=$SH  AppInfo.swift=$SW  Info.plist=$PL"
+          test "$SH" = "$SW" || { echo "::error::version drift (AppInfo.swift)"; exit 1; }
+          test "$SH" = "$PL" || { echo "::error::version drift (Info.plist)"; exit 1; }
 
       - name: CLI smoke test
         run: |
