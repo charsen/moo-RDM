@@ -46,6 +46,47 @@ public struct DisplayInfo: Identifiable, Hashable {
         guard let mode = currentMode, let native = nativePixelSize else { return false }
         return mode.pixelWidth == native.width && mode.pixelHeight == native.height
     }
+
+    // MARK: - Hashable
+    //
+    // Written out by hand rather than synthesised. `CGRect` only gained a
+    // `Hashable` conformance in recent SDKs, so a synthesised conformance makes
+    // this type fail to compile on Xcode 15 / Swift 5.10 — which is still a very
+    // common toolchain. Decomposing the rect into its four `Double`s keeps the
+    // type portable without changing its public API.
+
+    public static func == (lhs: DisplayInfo, rhs: DisplayInfo) -> Bool {
+        lhs.id == rhs.id
+            && lhs.ordinal == rhs.ordinal
+            && lhs.name == rhs.name
+            && lhs.isBuiltin == rhs.isBuiltin
+            && lhs.isMain == rhs.isMain
+            && lhs.isActive == rhs.isActive
+            && lhs.isMirrored == rhs.isMirrored
+            && lhs.identity == rhs.identity
+            && lhs.currentMode == rhs.currentMode
+            && lhs.rotation == rhs.rotation
+            && lhs.bounds == rhs.bounds
+            && lhs.nativePixelSize == rhs.nativePixelSize
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(ordinal)
+        hasher.combine(name)
+        hasher.combine(isBuiltin)
+        hasher.combine(isMain)
+        hasher.combine(isActive)
+        hasher.combine(isMirrored)
+        hasher.combine(identity)
+        hasher.combine(currentMode)
+        hasher.combine(rotation)
+        hasher.combine(bounds.origin.x)
+        hasher.combine(bounds.origin.y)
+        hasher.combine(bounds.size.width)
+        hasher.combine(bounds.size.height)
+        hasher.combine(nativePixelSize)
+    }
 }
 
 /// Reads the display topology through the **public** CoreGraphics API.
