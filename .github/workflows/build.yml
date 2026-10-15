@@ -1,0 +1,83 @@
+name: build
+
+# The point of this workflow is the "clean machine" guarantee: the repo claims
+# that ./build.sh works with nothing but the Xcode Command Line Tools, and that
+# claim is only worth anything if something actually checks it on a fresh runner.
+#
+# It deliberately does not run the GUI. A status item cannot be verified from
+# outside the process, and GitHub runners have no display — so the GUI is checked
+# by hand with `--selftest`, and what runs here is everything that can be checked
+# without one.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          sw_vers
+          swiftc --version
+          xcrun --show-sdk-version
+
+      - name: Build universal (arm64 + x86_64)
+        run: ./build.sh --universal
+
+      - name: Verify bundle structure
+        run: |
+          set -euo pipefail
+          APP=build/RDM-ARM.app
+          test -x "$APP/Contents/MacOS/RDM-ARM"
+          test -f "$APP/Contents/Info.plist"
+          test -f "$APP/Contents/Resources/AppIcon.icns"
+          plutil -lint "$APP/Contents/Info.plist"
+          echo "archs: $(lipo -archs "$APP/Contents/MacOS/RDM-ARM")"
+          codesign -dv --verbose=2 "$APP" 2>&1 | grep -E 'Identifier|Format|Signature'
+
+      - name: Verify both slices are present
+        run: |
+          set -euo pipefail
+          ARCHS="$(lipo -archs build/RDM-ARM.app/Contents/MacOS/RDM-ARM)"
+          case "$ARCHS" in
+            *arm64*)  echo "arm64 present" ;;
+            *) echo "::error::arm64 slice missing"; exit 1 ;;
+          esac
+          case "$ARCHS" in
+            *x86_64*) echo "x86_64 present" ;;
+            *) echo "::error::x86_64 slice missing"; exit 1 ;;
+          esac
+
+      - name: Verify the version in build.sh matches AppInfo.swift
+        run: |
+          set -euo pipefail
+          SH="$(sed -n 's/^VERSION="\([^"]*\)".*/\1/p' build.sh | head -1)"
+          SW="$(sed -n 's/.*static let version = "\([^"]*\)".*/\1/p' Sources/Core/AppInfo.swift | head -1)"
+          echo "build.sh=$SH  AppInfo.swift=$SW"
+          test "$SH" = "$SW" || { echo "::error::version drift"; exit 1; }
+
+      - name: CLI smoke test
+        run: |
+          set -euo pipefail
+          BIN=build/RDM-ARM.app/Contents/MacOS/RDM-ARM
+          "$BIN" -v
+          "$BIN" --help > /dev/null
+          # A headless runner has no displays; -ld must still exit 0.
+          "$BIN" -ld
+          "$BIN" -lm --json > /dev/null
+          echo "CLI ok"
+
+      - name: Package release zip
+        run: ./Tools/package-release.sh --no-build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RDM-ARM-zip
+          path: build/RDM-ARM-*-universal.zip
+          if-no-files-found: error

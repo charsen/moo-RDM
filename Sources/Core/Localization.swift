@@ -58,6 +58,7 @@ public enum L10n {
 
     private static let english: [String: String] = [
         "app.name": "RDM-ARM",
+        "common.ok": "OK",
 
         "menu.display": "Display %d",
         "menu.mainDisplay": "Main Display",
@@ -191,6 +192,7 @@ public enum L10n {
 
     private static let chinese: [String: String] = [
         "app.name": "RDM-ARM",
+        "common.ok": "好",
 
         "menu.display": "显示器 %d",
         "menu.mainDisplay": "主显示器",

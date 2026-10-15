@@ -71,11 +71,19 @@ final class MenuActionRouter: NSObject {
     }
 
     private func report(_ error: String) {
+        present(error, style: .warning, title: AppInfo.name)
+    }
+
+    private func notify(_ message: String) {
+        present(message, style: .informational, title: AppInfo.name)
+    }
+
+    private func present(_ text: String, style: NSAlert.Style, title: String) {
         let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = AppInfo.name
-        alert.informativeText = error
-        alert.addButton(withTitle: "OK")
+        alert.alertStyle = style
+        alert.messageText = title
+        alert.informativeText = text
+        alert.addButton(withTitle: L10n.t("common.ok"))
         NSApp.activate(ignoringOtherApps: true)
         alert.runModal()
     }
@@ -213,10 +221,12 @@ final class MenuActionRouter: NSObject {
         panel.allowedContentTypes = [.json]
         NSApp.activate(ignoringOtherApps: true)
         guard panel.runModal() == .OK, let url = panel.url else { return }
+        let count = ProfileStore.shared.profiles.count
         do {
             try ProfileStore.shared.export(to: url)
+            notify(L10n.t("profile.exported", Int32(count)))
         } catch {
-            report(L10n.t("profile.importFailed", error.localizedDescription))
+            report(L10n.t("profile.exportFailed", error.localizedDescription))
         }
     }
 
@@ -228,7 +238,8 @@ final class MenuActionRouter: NSObject {
         NSApp.activate(ignoringOtherApps: true)
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
-            _ = try ProfileStore.shared.importProfiles(from: url)
+            let imported = try ProfileStore.shared.importProfiles(from: url)
+            notify(L10n.t("profile.imported", Int32(imported)))
         } catch {
             report(L10n.t("profile.importFailed", error.localizedDescription))
         }
