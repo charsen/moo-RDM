@@ -139,6 +139,8 @@ public enum L10n {
         "profile.exported": "Exported %d profile(s)",
         "profile.imported": "Imported %d profile(s)",
         "profile.importFailed": "Import failed: %@",
+        "profile.exportFailed": "Export failed: %@",
+        "profile.fileError": "Profile file problem",
 
         "error.noSuchDisplay": "No display matches index %d",
         "error.noSuchMode": "No mode matches %@",
@@ -270,6 +272,8 @@ public enum L10n {
         "profile.exported": "已导出 %d 个配置文件",
         "profile.imported": "已导入 %d 个配置文件",
         "profile.importFailed": "导入失败：%@",
+        "profile.exportFailed": "导出失败：%@",
+        "profile.fileError": "配置文件问题",
 
         "error.noSuchDisplay": "没有索引为 %d 的显示器",
         "error.noSuchMode": "没有匹配 %@ 的模式",

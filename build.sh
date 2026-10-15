@@ -17,7 +17,7 @@ set -euo pipefail
 
 APP_NAME="RDM-ARM"
 BUNDLE_ID="io.rdmarm.RDM-ARM"
-VERSION="1.0.0"
+VERSION="1.0.1"
 MIN_MACOS="13.0"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -60,6 +60,16 @@ SDK_PATH="$(xcrun --show-sdk-path)"
 echo "==> SDK       $SDK_PATH"
 echo "==> Swift     $(swiftc --version 2>&1 | head -1)"
 echo "==> arch(es)  $ARCHS"
+
+# VERSION here and AppInfo.version must agree, otherwise the About panel and the
+# Finder Get Info window would report different versions of the same build.
+APPINFO_VERSION="$(sed -n 's/.*static let version = "\([^"]*\)".*/\1/p' \
+  "$ROOT/Sources/Core/AppInfo.swift" | head -1)"
+if [ -n "$APPINFO_VERSION" ] && [ "$APPINFO_VERSION" != "$VERSION" ]; then
+  echo "error: version mismatch — build.sh has $VERSION but AppInfo.swift has $APPINFO_VERSION" >&2
+  exit 1
+fi
+echo "==> version   $VERSION"
 
 mkdir -p "$BUILD_DIR"
 

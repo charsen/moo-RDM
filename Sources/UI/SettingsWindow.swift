@@ -407,7 +407,11 @@ final class SettingsViewController: NSViewController {
         panel.allowedContentTypes = [.json]
         NSApp.activate(ignoringOtherApps: true)
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        try? ProfileStore.shared.export(to: url)
+        do {
+            try ProfileStore.shared.export(to: url)
+        } catch {
+            reportError(L10n.t("profile.exportFailed", error.localizedDescription))
+        }
     }
 
     @objc private func importProfiles(_ sender: NSButton) {
@@ -417,8 +421,23 @@ final class SettingsViewController: NSViewController {
         panel.allowedContentTypes = [.json]
         NSApp.activate(ignoringOtherApps: true)
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        try? ProfileStore.shared.importProfiles(from: url)
-        rebuildProfileRows()
+        do {
+            _ = try ProfileStore.shared.importProfiles(from: url)
+            rebuildProfileRows()
+        } catch {
+            reportError(L10n.t("profile.importFailed", error.localizedDescription))
+        }
+    }
+
+    /// Surfaces a failure instead of swallowing it. The previous `try?` made a
+    /// malformed profile file look like a no-op, which is the worst possible
+    /// outcome for someone testing the app.
+    private func reportError(_ message: String) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = L10n.t("profile.fileError")
+        alert.informativeText = message
+        alert.runModal()
     }
 
     @objc private func copyDiagnostics(_ sender: NSButton) {
