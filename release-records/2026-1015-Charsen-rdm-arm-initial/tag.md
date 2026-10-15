@@ -1,6 +1,7 @@
 # RDM-ARM 1.0.0 首次发布
 
-状态：**本地已提交，待建远端仓并推送** —— 本轮完成 commit；双源仓尚未在 Gitee / GitHub 创建。
+状态：**GitHub 已发布；Gitee 侧待建仓** —— 已 commit 并打 annotated tag `1.0.0`，
+GitHub（公开镜像）已直推并回读核验通过；Gitee（canonical）仓尚未创建，因此 `origin` 未推。
 
 ## 发布形态
 
@@ -55,12 +56,35 @@ macOS 27.0.1 / arm64 / BenQ PD2705U（原生 3840 × 2160）实机：
 **注意**：验证旋转与分辨率切换时改动了本机显示器模式，已还原为
 `2304 × 1296 ⚡️ @ 60 Hz`。
 
+## 双源发布状态
+
+远端配置（沿用 `moo-scaffold` 的命名习惯）：`origin` → `git@gitee.com:charsen/moo-RDM.git`
+（canonical），`github` → `https://github.com/charsen/moo-RDM.git`（公开镜像）。
+
+| 远端 | 仓已建 | master | tag `1.0.0` | 回读核验 |
+| --- | --- | --- | --- | --- |
+| github（公开镜像） | ✅ 2026-10-15 建 | ✅ `f90e929` | ✅ annotated `d7c46eb`，peeled → `f90e929` | ✅ `git ls-remote` 一致 |
+| origin（Gitee，canonical） | ❌ 待建 | — | — | — |
+
+**卡点**：Gitee 不支持 push-to-create，建仓要走 API，需要 access token；本机
+（env / keychain / credential helper / shell profile）均无 Gitee token，SSH key 虽可认证
+但仓不存在。⇒ 需人工建仓。
+
+`moo-RDM` 已登记进 `/Volumes/dev/wwwroot/git-local-pull.sh` 的 `REPOS_TABLE`
+（`git-local-push.sh` 从该表取真值源），建仓后 fleet cron 即可自动同步 Gitee。
+
 ## 正式发版下一步
 
-1. 在 Gitee 建 `charsen/moo-RDM`（canonical），在 GitHub 建 `charsen/moo-RDM`（公开镜像）。
-2. 配远端：`origin` → `git@gitee.com:charsen/moo-RDM.git`，
-   `github` → `https://github.com/charsen/moo-RDM.git`（与 `moo-scaffold` 同一命名习惯）。
-3. `master` 顶点打 annotated tag `1.0.0`，**双源直推** `master` 与 tag，逐远端回读核验。
+1. 在 Gitee 建 `charsen/moo-RDM`（**不要**勾选初始化 README，否则会与本地历史分叉）。
+2. 一条命令补齐 Gitee 侧：
+
+   ```bash
+   cd /Volumes/dev/wwwroot/moo-RDM
+   git push -u origin master && git push origin 1.0.0
+   git ls-remote origin    # 回读核验 master 与 peeled tag 与 github 一致
+   ```
+
+3. 核验两端 `refs/heads/master` 与 `refs/tags/1.0.0^{}` 指向同一 commit `f90e929`。
 
 > 上游 RDM 未附任何正式许可证文件（README 中作者表示"作者们会乐意你自由使用"）。
 > 本仓按原样（as-is）提供，README 与 About 均已如实声明，**未臆造 GPL/MIT 之类的许可证**。
