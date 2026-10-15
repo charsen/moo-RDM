@@ -94,6 +94,22 @@ rdm-arm --selftest                 # GUI 自检：菜单栏图标位置 + 菜单
 
 ---
 
+## 安装（直接下载）
+
+不想自己编译的话，从 [Releases](../../releases) 下载 `RDM-ARM-<版本>-universal.zip`，
+解压后把 `RDM-ARM.app` 拖进「应用程序」。
+
+**首次打开前必须做一件事。** 本应用只有 ad-hoc 签名（没有 Apple 开发者签名与公证），
+macOS 会拦下它并提示「已损坏」或「无法验证开发者」——这是预期的，不是文件真的坏了。
+在「终端」里执行一次：
+
+```bash
+xattr -dr com.apple.quarantine /Applications/RDM-ARM.app
+```
+
+**它是菜单栏应用，没有主窗口。** 打开后请看屏幕**顶部菜单栏**，会多出一个显示器图标。
+如果菜单栏图标太多看不到，在菜单栏空白处按住 Command 再拖动可以调整顺序。
+
 ## 构建
 
 只要装了 Command Line Tools：
@@ -111,9 +127,19 @@ git clone <this-repo> && cd moo-RDM
 ./build.sh --install     # 构建并复制到 /Applications
 ./build.sh --run         # 构建并启动
 ./build.sh --clean       # 清理
+
+./Tools/package-release.sh          # 构建并打包成可发布的 zip（含安装说明 + SHA-256）
+./Tools/package-release.sh --no-build   # 复用已有产物重新打包
 ```
 
 构建脚本不依赖 Swift Package Manager、CocoaPods 或 Xcode.app——直接用 `swiftc` 编译，再手工组装 `.app` bundle 并做 ad-hoc 签名。
+
+CI（`.github/workflows/build.yml`）在干净的 macOS runner 上验证通用构建、bundle 结构、
+两个架构切片都在、版本号与 `AppInfo.swift` 一致、CLI 冒烟，并产出 zip。
+**它不跑 GUI** —— 菜单栏图标无法从进程外验证，runner 也没有显示器；GUI 用 `--selftest` 手工验。
+
+> 注意 `build.sh` 的 `VERSION` 与 `Sources/Core/AppInfo.swift` 的 `version` 必须一致，
+> 构建脚本会核对，不一致直接报错退出。
 
 > **关于 SwiftUI**：项目**不使用 SwiftUI**。Command Line Tools 自带 `libSwiftMacros.dylib`，但**不带 SwiftUI 的宏插件**，所以 `@State` / `@Binding` 这类属性包装器在只有 CLT 的环境下无法编译。设置窗口因此用纯 AppKit 实现——这是为了让"不需要 Xcode"这个承诺真正成立。
 
@@ -181,6 +207,8 @@ Tools/
 - 比私有 API 少约 **33 个边缘低分模式**（290 → 257）。这是换取系统升级稳定性的代价。
 - 只做了 **ad-hoc 签名**，没有 Apple 开发者签名和公证。首次打开可能需要在"系统设置 → 隐私与安全性"里放行。
 - 部署目标 **macOS 13.0**。旋转依赖的私有符号在更早的系统上可能不存在，此时会自动隐藏旋转菜单。
+- 构建工具链**最低已验证到 Xcode 15.4 / Swift 5.10**（CI runner）。早期版本用过会失败的写法
+  （`CGRect` 的 `Hashable` 合成）已修掉，但更老的工具链未做验证。
 - 多屏镜像（mirroring）状态下部分模式不可用，这是 macOS 本身的限制。
 
 ---
