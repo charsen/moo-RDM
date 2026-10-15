@@ -177,7 +177,7 @@ public final class ProfileStore {
                                                   permanently: usePermanent,
                                                   includeUnusable: true) {
             case .success(let mode):
-                report.applied.append("\(display.name): \(mode.menuTitle)")
+                report.applied.append("\(display.name): \(mode.detailedTitle)")
             case .failure(let error):
                 report.warnings.append("\(display.name): \(error.description)")
             }
@@ -191,45 +191,5 @@ public final class ProfileStore {
             }
         }
         return report
-    }
-
-    // MARK: - Import / export
-
-    public func export(ids: [UUID]? = nil, to url: URL) throws {
-        let selection = ids.map { wanted in profiles.filter { wanted.contains($0.id) } } ?? profiles
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        encoder.dateEncodingStrategy = .iso8601
-        let data = try encoder.encode(selection)
-        try data.write(to: url, options: .atomic)
-    }
-
-    /// Imports profiles, replacing same-named entries. Returns how many were read.
-    @discardableResult
-    public func importProfiles(from url: URL, replacing: Bool = true) throws -> Int {
-        let data = try Data(contentsOf: url)
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-
-        // Accept both a bare array and a single profile object.
-        let incoming: [DisplayProfile]
-        if let list = try? decoder.decode([DisplayProfile].self, from: data) {
-            incoming = list
-        } else {
-            incoming = [try decoder.decode(DisplayProfile.self, from: data)]
-        }
-
-        for var profile in incoming {
-            if replacing, let index = profiles.firstIndex(where: { $0.name == profile.name }) {
-                profile.id = profiles[index].id
-                profiles[index] = profile
-            } else {
-                profile.id = UUID()
-                profiles.append(profile)
-            }
-        }
-        profiles.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-        persist()
-        return incoming.count
     }
 }

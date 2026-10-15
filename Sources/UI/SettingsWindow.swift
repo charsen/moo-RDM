@@ -1,5 +1,4 @@
 import AppKit
-import UniformTypeIdentifiers
 
 // The settings window is written in plain AppKit rather than SwiftUI.
 //
@@ -199,18 +198,6 @@ final class SettingsViewController: NSViewController {
         addFullWidth(profilesStack, to: stack)
         rebuildProfileRows()
 
-        stack.addArrangedSubview(divider())
-
-        let exportButton = NSButton(title: L10n.t("menu.exportProfiles"), target: self, action: #selector(exportProfiles(_:)))
-        exportButton.bezelStyle = .rounded
-        let importButton = NSButton(title: L10n.t("menu.importProfiles"), target: self, action: #selector(importProfiles(_:)))
-        importButton.bezelStyle = .rounded
-
-        let buttonRow = NSStackView(views: [exportButton, importButton])
-        buttonRow.orientation = .horizontal
-        buttonRow.spacing = 8
-        stack.addArrangedSubview(buttonRow)
-
         return stack
     }
 
@@ -409,46 +396,6 @@ final class SettingsViewController: NSViewController {
         guard let id = sender.identifier.flatMap({ UUID(uuidString: $0.rawValue) }) else { return }
         ProfileStore.shared.delete(id: id)
         rebuildProfileRows()
-    }
-
-    @objc private func exportProfiles(_ sender: NSButton) {
-        guard !ProfileStore.shared.profiles.isEmpty else { NSSound.beep(); return }
-        let panel = NSSavePanel()
-        panel.nameFieldStringValue = "RDM-ARM-Profiles.json"
-        panel.allowedContentTypes = [.json]
-        NSApp.activate(ignoringOtherApps: true)
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        do {
-            try ProfileStore.shared.export(to: url)
-        } catch {
-            reportError(L10n.t("profile.exportFailed", error.localizedDescription))
-        }
-    }
-
-    @objc private func importProfiles(_ sender: NSButton) {
-        let panel = NSOpenPanel()
-        panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = false
-        panel.allowedContentTypes = [.json]
-        NSApp.activate(ignoringOtherApps: true)
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        do {
-            _ = try ProfileStore.shared.importProfiles(from: url)
-            rebuildProfileRows()
-        } catch {
-            reportError(L10n.t("profile.importFailed", error.localizedDescription))
-        }
-    }
-
-    /// Surfaces a failure instead of swallowing it. The previous `try?` made a
-    /// malformed profile file look like a no-op, which is the worst possible
-    /// outcome for someone testing the app.
-    private func reportError(_ message: String) {
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = L10n.t("profile.fileError")
-        alert.informativeText = message
-        alert.runModal()
     }
 
     @objc private func copyDiagnostics(_ sender: NSButton) {

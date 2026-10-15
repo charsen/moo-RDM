@@ -193,7 +193,17 @@ enum GUISelfTest {
         let pad = String(repeating: "  ", count: depth)
         let mark = item.state == .on ? "[x] " : (item.isEnabled ? "    " : "-   ")
         let key = item.keyEquivalent.isEmpty ? "" : "  (⌘\(item.keyEquivalent))"
-        emit("\(pad)\(mark)\(item.title.isEmpty ? "<separator>" : item.title)\(key)")
+
+        // Resolution entries deliberately omit the refresh rate from their label,
+        // because the rate has its own menu now. Printing the payload is the only
+        // way to check that each entry really carries the rate it should — for
+        // instance that picking a resolution keeps the rate you are already on.
+        var detail = ""
+        if let box = item.representedObject as? ModeBox {
+            detail = "   → \(box.mode.detailedTitle)  [\(box.mode.pixelDescription)]"
+        }
+
+        emit("\(pad)\(mark)\(item.title.isEmpty ? "<separator>" : item.title)\(key)\(detail)")
 
         if let submenu = item.submenu {
             for child in submenu.items {

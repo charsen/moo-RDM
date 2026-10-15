@@ -1,7 +1,6 @@
 import AppKit
 import CoreGraphics
 import Foundation
-import UniformTypeIdentifiers
 
 // MARK: - Represented-object boxes
 //
@@ -74,10 +73,6 @@ final class MenuActionRouter: NSObject {
         present(error, style: .warning, title: AppInfo.name)
     }
 
-    private func notify(_ message: String) {
-        present(message, style: .informational, title: AppInfo.name)
-    }
-
     private func present(_ text: String, style: NSAlert.Style, title: String) {
         let alert = NSAlert()
         alert.alertStyle = style
@@ -99,7 +94,7 @@ final class MenuActionRouter: NSObject {
         if display(mode.displayID)?.currentMode?.isSame(as: mode) == true { return }
 
         let kept = ModeChangeGuard.shared.perform(permanently: permanently,
-                                                  description: mode.menuTitle) {
+                                                  description: mode.detailedTitle) {
             switch ModeController.apply(mode, permanently: permanently) {
             case .success:
                 return true
@@ -244,41 +239,6 @@ final class MenuActionRouter: NSObject {
     @objc func deleteProfile(_ sender: NSMenuItem) {
         guard let box = sender.representedObject as? ProfileBox else { return }
         ProfileStore.shared.delete(id: box.profileID)
-        onMenuNeedsRebuild?()
-    }
-
-    @objc func exportProfiles(_ sender: NSMenuItem) {
-        guard !ProfileStore.shared.profiles.isEmpty else {
-            report(L10n.t("menu.noProfiles"))
-            return
-        }
-        let panel = NSSavePanel()
-        panel.nameFieldStringValue = "RDM-ARM-Profiles.json"
-        panel.allowedContentTypes = [.json]
-        NSApp.activate(ignoringOtherApps: true)
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        let count = ProfileStore.shared.profiles.count
-        do {
-            try ProfileStore.shared.export(to: url)
-            notify(L10n.t("profile.exported", Int32(count)))
-        } catch {
-            report(L10n.t("profile.exportFailed", error.localizedDescription))
-        }
-    }
-
-    @objc func importProfiles(_ sender: NSMenuItem) {
-        let panel = NSOpenPanel()
-        panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = false
-        panel.allowedContentTypes = [.json]
-        NSApp.activate(ignoringOtherApps: true)
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        do {
-            let imported = try ProfileStore.shared.importProfiles(from: url)
-            notify(L10n.t("profile.imported", Int32(imported)))
-        } catch {
-            report(L10n.t("profile.importFailed", error.localizedDescription))
-        }
         onMenuNeedsRebuild?()
     }
 

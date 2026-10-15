@@ -61,6 +61,9 @@ enum StatusMenuBuilder {
         submenu.addItem(.separator())
 
         submenu.addItem(resolutionsItem(for: display, router: router))
+        if let refreshItem = refreshRateItem(for: display, router: router) {
+            submenu.addItem(refreshItem)
+        }
         submenu.addItem(.separator())
 
         let box = DisplayBox(displayID: display.id, identityKey: display.identity.key)
@@ -84,66 +87,88 @@ enum StatusMenuBuilder {
         return parent
     }
 
-    // MARK: - Resolutions
+    // MARK: - Resolution and refresh rate
+    //
+    // These are two sibling menus, not one nested one. Nesting the refresh rates
+    // under each resolution made the list hard to scan — a geometry with four
+    // rates took four lines — and changing only the rate meant a submenu hop.
+    // Now the geometry lives here and the rate lives next door.
 
-    private static func resolutionsItem(for display: DisplayInfo,
-                                        router: MenuActionRouter) -> NSMenuItem {
-        let title = L10n.t("menu.resolution")
-        let parent = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-        let submenu = NSMenu()
-
+    /// The modes the menu is allowed to show, after both view filters.
+    private static func visibleModes(for display: DisplayInfo) -> [DisplayMode] {
         var modes = DisplayManager.allModes(for: display.id,
                                             includeUnusable: Preferences.shared.showUnusableModes)
         if Preferences.shared.hiDPIOnly { modes = modes.filter(\.isHiDPI) }
+        return modes
+    }
 
-        let currentMode = display.currentMode
+    private static func resolutionsItem(for display: DisplayInfo,
+                                        router: MenuActionRouter) -> NSMenuItem {
+        let parent = NSMenuItem(title: L10n.t("menu.resolution"), action: nil, keyEquivalent: "")
+        let submenu = NSMenu()
+
+        let current = display.currentMode
         // macOS returns many modes that are indistinguishable in the menu; collapse
-        // them before grouping so each geometry + refresh rate appears exactly once.
-        let groups = modes
+        // them before grouping so each geometry appears exactly once.
+        let groups = visibleModes(for: display)
             .sortedForMenu()
-            .deduplicated(preferring: currentMode)
+            .deduplicated(preferring: current)
             .groupedByResolution()
 
         if groups.isEmpty {
-            submenu.addItem(disabled(L10n.t("menu.noDisplays")))
+            submenu.addItem(disabled(L10n.t("menu.noModes")))
         }
 
         for group in groups {
-            let representative = group.mode
-            let isCurrentResolution = representative.resolutionKey == currentMode?.resolutionKey
+            // Keep the rate the user is already on whenever the new geometry
+            // supports it, so picking a resolution does not quietly change the
+            // refresh rate as well.
+            let target = group.refreshRates.first { rate in
+                guard let current, current.refreshRate > 0 else { return false }
+                return abs(rate.refreshRate - current.refreshRate) < 0.5
+            } ?? group.mode
 
-            if group.refreshRates.count <= 1 {
-                // A single refresh rate needs no nested menu.
-                guard let only = group.refreshRates.first else { continue }
-                let item = action(representative.menuTitle,
-                                  #selector(MenuActionRouter.selectMode(_:)), router)
-                item.representedObject = ModeBox(only)
-                item.state = isExactMatch(only, currentMode) ? .on : .off
-                submenu.addItem(item)
-            } else {
-                let parentItem = NSMenuItem(title: representative.menuTitle,
-                                            action: nil, keyEquivalent: "")
-                parentItem.state = isCurrentResolution ? .on : .off
-
-                let rateMenu = NSMenu()
-                for rate in group.refreshRates {
-                    let item = action(rate.refreshDescription,
-                                      #selector(MenuActionRouter.selectMode(_:)), router)
-                    item.representedObject = ModeBox(rate)
-                    item.state = isExactMatch(rate, currentMode) ? .on : .off
-                    rateMenu.addItem(item)
-                }
-                parentItem.submenu = rateMenu
-                submenu.addItem(parentItem)
-            }
+            let item = action(group.mode.menuTitle,
+                              #selector(MenuActionRouter.selectMode(_:)), router)
+            item.representedObject = ModeBox(target)
+            item.state = group.mode.resolutionKey == current?.resolutionKey ? .on : .off
+            submenu.addItem(item)
         }
 
         parent.submenu = submenu
         return parent
     }
 
-    private static func isExactMatch(_ mode: DisplayMode, _ current: DisplayMode?) -> Bool {
-        mode.isSame(as: current)
+    /// Refresh rates available *at the resolution currently in use*.
+    ///
+    /// Listing rates from every geometry would make this a second resolution
+    /// picker. Rates that would drag the geometry along are simply not offered.
+    private static func refreshRateItem(for display: DisplayInfo,
+                                        router: MenuActionRouter) -> NSMenuItem? {
+        guard let current = display.currentMode else { return nil }
+
+        let rates = visibleModes(for: display)
+            .deduplicated(preferring: current)
+            .filter { $0.resolutionKey == current.resolutionKey }
+            .sorted { $0.refreshRate > $1.refreshRate }
+
+        // A single rate is not a choice, and a rate of 0 means the display did not
+        // report one. Hide the menu rather than show a dead control.
+        guard rates.count > 1 else { return nil }
+
+        let parent = NSMenuItem(title: L10n.t("menu.refreshRate"), action: nil, keyEquivalent: "")
+        let submenu = NSMenu()
+
+        for rate in rates {
+            let item = action(rate.refreshDescription,
+                              #selector(MenuActionRouter.selectMode(_:)), router)
+            item.representedObject = ModeBox(rate)
+            item.state = rate.isSame(as: current) ? .on : .off
+            submenu.addItem(item)
+        }
+
+        parent.submenu = submenu
+        return parent
     }
 
     // MARK: - Rotation
@@ -253,11 +278,6 @@ enum StatusMenuBuilder {
         submenu.addItem(.separator())
         submenu.addItem(action(L10n.t("menu.saveProfile"),
                                #selector(MenuActionRouter.saveProfile(_:)), router))
-        submenu.addItem(.separator())
-        submenu.addItem(action(L10n.t("menu.exportProfiles"),
-                               #selector(MenuActionRouter.exportProfiles(_:)), router))
-        submenu.addItem(action(L10n.t("menu.importProfiles"),
-                               #selector(MenuActionRouter.importProfiles(_:)), router))
 
         parent.submenu = submenu
         return parent

@@ -141,8 +141,19 @@ public struct DisplayMode: Hashable, Identifiable {
     }
 
     /// Menu label. The lightning bolt mirrors the original RDM's HiDPI marker.
+    ///
+    /// Deliberately omits the refresh rate: the menu shows that in its own
+    /// submenu, so repeating it here would double every line.
     public var menuTitle: String {
         isHiDPI ? "\(pointDescription) ⚡️" : pointDescription
+    }
+
+    /// `menuTitle` plus the refresh rate, for places where the rate is not shown
+    /// separately — the change-confirmation panel, alerts, profile summaries.
+    /// Without this, changing only the refresh rate reports the same resolution
+    /// back to the user and reads as if nothing happened.
+    public var detailedTitle: String {
+        refreshRate > 0 ? "\(menuTitle) @ \(refreshDescription)" : menuTitle
     }
 
     /// Modes that differ only in refresh rate collapse into one group under this key.
