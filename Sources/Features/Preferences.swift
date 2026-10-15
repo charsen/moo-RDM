@@ -50,7 +50,7 @@ public final class Preferences {
         self.defaults = defaults
         defaults.register(defaults: [
             Key.showUnusableModes: true,
-            Key.hiDPIOnly: false,
+            Key.hiDPIOnly: true,
             Key.permanentChanges: false,
             Key.rememberPerDisplay: true,
             Key.restoreOnWake: true,
@@ -72,6 +72,10 @@ public final class Preferences {
     }
 
     /// Hide every standard-resolution entry, leaving only HiDPI ones.
+    ///
+    /// On by default: the HiDPI modes are the reason to run this app at all, and
+    /// mixing them in with a hundred standard entries buries them. The toggle in
+    /// the menu and in Preferences brings the rest back.
     public var hiDPIOnly: Bool {
         get { defaults.bool(forKey: Key.hiDPIOnly) }
         set { defaults.set(newValue, forKey: Key.hiDPIOnly); changed() }
