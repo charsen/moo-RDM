@@ -1,5 +1,7 @@
 # RDM-ARM
 
+[Gitee 主仓](https://gitee.com/charsen/moo-RDM) · [GitHub 镜像](https://github.com/charsen/moo-RDM)
+
 **让 macOS 显示器跑出它真正支持的任何分辨率。**
 
 RDM-ARM 是 [avibrazil/RDM](https://github.com/avibrazil/RDM) 的原生 Apple 芯片重写版。原版已经停止维护，在新版 macOS 上只能"凑合能用"——分辨率能列出来，但刷新率和色彩深度是错的。这个重写版换掉了失效的实现方式，恢复完整功能，并补上了原版没有的快捷键、配置文件和屏幕热插拔记忆。
