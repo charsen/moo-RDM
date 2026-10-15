@@ -46,7 +46,9 @@ af066bf  refs/heads/master
 
 ### Release 与附件
 
-三版都是 **prerelease**（与 GitHub 原有标记一致），两端各一个通用二进制附件：
+`1.0.3` 已提升为**正式 Release**（两端一致），`1.0.1` / `1.0.2` 保持 prerelease。
+这样仓库首页会显示「最新版本」，同事找下载入口不用翻 prerelease 列表。
+两端各一个通用二进制附件：
 
 | 版本 | 附件 | 字节 | SHA-256（两端一致，已实测下载比对） |
 | --- | --- | --- | --- |
@@ -87,6 +89,7 @@ Gitee 每个 Release 还会**自动附带两个源码包**（`1.0.x.zip` / `1.0.
 | HiDPI 默认 | 菜单中「仅显示 HiDPI 模式」为勾选状态 |
 | 黑屏保护 | `--selftest --roundtrip` 还原往返 PASS |
 | 双源附件 | 两侧下载哈希均与本地一致 |
+| 正式 Release | GitHub `/releases/latest` 返回 `1.0.3`；Gitee 该版 `prerelease=False`；两端附件仍在 |
 
 ## 凭证
 
@@ -96,9 +99,22 @@ Gitee 与 GitHub 的 API token 都在 `/Volumes/dev/git_tokens`（`## gitee_toke
 > moo-git-fleet 的 NOTES 里记过教训：**不要 `cat` 或 `sed` 这个文件**，token 排在标题行
 > 的下一段，常见脱敏正则匹配不上，会把它原样打进会话输出。本次全程只取单个变量。
 
+### 正式 Release 的提升
+
+`1.0.3` 从 prerelease 提升为正式版，两端各一次 PATCH：
+
+- **GitHub**：`PATCH /repos/{owner}/{repo}/releases/{id}`，只传 `{"prerelease": false}`
+  即可 —— 它是真正的部分更新。
+- **Gitee**：`PATCH /repos/{owner}/{repo}/releases/{id}` **不是部分更新**，只传
+  `prerelease` 会被拒。必须把 `tag_name` / `name` / `body` / `prerelease` /
+  `target_commitish` 整套原样回传，所以先把当前 Release 读出来重建 payload 再提交。
+  与建仓时 `PATCH /repos/{owner}/{repo}` 缺 `name` 报 400 是同一个毛病。
+
+提升后复核：GitHub `/releases/latest` 返回 `1.0.3`（`prerelease=False`），
+Gitee 列表中 `1.0.3` 的 `prerelease` 也为 `False`，两端附件未受影响。
+
 ## 下一步（未做）
 
-- 三个 Release 目前都是 **prerelease**，所以仓库页不会显示「最新版本」。若要让同事更容易
-  找到下载入口，可以把 1.0.3 提升为正式 Release（两端各一次 PATCH）。
 - 复盘清单里仍留着：快捷键注册失败静默、零测试、无 `LICENSE`、无 `CHANGELOG`、
   9 个长期未使用的本地化键。
+- `1.0.1` / `1.0.2` 仍是 prerelease。历史版本保持原样即可，不影响「最新版本」显示。
