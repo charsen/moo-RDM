@@ -1,0 +1,11 @@
+# 构建产物（build.sh 会重新生成 .app 与图标）
+/build/
+
+# macOS
+.DS_Store
+
+# 编辑器
+.vscode/
+
+# 本仓的项目记忆/会话日志（含宿主名、本机绝对路径等本地上下文，不入仓）
+/.workbuddy-ai/

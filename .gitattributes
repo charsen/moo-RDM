@@ -1,0 +1,12 @@
+# 统一文本行为 LF，避免跨平台行尾噪音（build.sh / Info.plist 都是文本）
+* text=auto eol=lf
+
+# 二进制，不做文本 diff
+*.icns binary
+*.png  binary
+
+# 归档（git archive）时不进包：内部协作文档与本机上下文
+/release-records   export-ignore
+/.workbuddy-ai     export-ignore
+/.gitignore        export-ignore
+/.gitattributes    export-ignore
