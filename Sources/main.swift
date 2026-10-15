@@ -11,7 +11,7 @@ let arguments = Array(CommandLine.arguments.dropFirst())
 // GUI diagnostics: creates the real status item, reports where the window
 // server put it, and prints the menu it built.
 if arguments.first == "--selftest" {
-    exit(GUISelfTest.run())
+    exit(GUISelfTest.run(arguments: arguments))
 }
 
 if !arguments.isEmpty {

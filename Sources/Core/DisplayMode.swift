@@ -150,6 +150,17 @@ public struct DisplayMode: Hashable, Identifiable {
         "\(width)x\(height)x\(pixelWidth)x\(pixelHeight)"
     }
 
+    /// True when `other` is what the user would call the same setting — same
+    /// geometry and effectively the same refresh rate.
+    ///
+    /// Used to tick the active menu entry and to skip the confirmation prompt
+    /// when nothing would actually change.
+    public func isSame(as other: DisplayMode?) -> Bool {
+        guard let other else { return false }
+        return resolutionKey == other.resolutionKey
+            && abs(refreshRate - other.refreshRate) < 0.5
+    }
+
     /// Aspect ratio as a displayable string, e.g. "16:9".
     public var aspectDescription: String {
         guard width > 0, height > 0 else { return "—" }

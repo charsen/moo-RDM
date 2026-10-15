@@ -92,17 +92,35 @@ final class MenuActionRouter: NSObject {
 
     @objc func selectMode(_ sender: NSMenuItem) {
         guard let box = sender.representedObject as? ModeBox else { return }
-        switch ModeController.apply(box.mode, permanently: Preferences.shared.permanentChanges) {
-        case .success:
-            if let display = display(box.mode.displayID) { memory.remember(display: display) }
-        case .failure(let error):
-            report(error.description)
+        let mode = box.mode
+        let permanently = Preferences.shared.permanentChanges
+
+        // Picking the mode that is already active must not raise a prompt.
+        if display(mode.displayID)?.currentMode?.isSame(as: mode) == true { return }
+
+        let kept = ModeChangeGuard.shared.perform(permanently: permanently,
+                                                  description: mode.menuTitle) {
+            switch ModeController.apply(mode, permanently: permanently) {
+            case .success:
+                return true
+            case .failure(let error):
+                report(error.description)
+                return false
+            }
+        }
+
+        // Only record the mode once the user has confirmed it. Remembering it up
+        // front would make a reverted mode come back on the next reconnect.
+        if kept, let display = display(mode.displayID) {
+            memory.remember(display: display)
         }
         onMenuNeedsRebuild?()
     }
 
     @objc func resetToDefault(_ sender: NSMenuItem) {
         guard let box = sender.representedObject as? DisplayBox else { return }
+        // Deliberately not guarded: this is the recovery action, so it must never
+        // be the thing that gets rolled back.
         switch ModeController.resetToDefault(on: box.displayID,
                                              permanently: Preferences.shared.permanentChanges) {
         case .success:
@@ -117,12 +135,21 @@ final class MenuActionRouter: NSObject {
 
     @objc func selectRotation(_ sender: NSMenuItem) {
         guard let box = sender.representedObject as? RotationBox else { return }
-        switch DisplayRotationController.setRotation(box.degrees, on: box.displayID) {
-        case .success:
-            if let display = display(box.displayID) { memory.remember(display: display) }
-        case .failure(let error):
-            report(error.description)
+        guard abs(DisplayRotationController.currentRotation(of: box.displayID) - box.degrees) >= 0.5
+        else { return }
+
+        let kept = ModeChangeGuard.shared.perform(permanently: Preferences.shared.permanentChanges,
+                                                  description: L10n.t("menu.rotation")) {
+            switch DisplayRotationController.setRotation(box.degrees, on: box.displayID) {
+            case .success:
+                return true
+            case .failure(let error):
+                report(error.description)
+                return false
+            }
         }
+
+        if kept, let display = display(box.displayID) { memory.remember(display: display) }
         onMenuNeedsRebuild?()
     }
 
@@ -198,9 +225,18 @@ final class MenuActionRouter: NSObject {
         guard let box = sender.representedObject as? ProfileBox,
               let profile = ProfileStore.shared.profiles.first(where: { $0.id == box.profileID })
         else { return }
-        let outcome = ProfileStore.shared.apply(profile)
-        if !outcome.warnings.isEmpty {
-            report(outcome.warnings.joined(separator: "\n"))
+
+        var warnings: [String] = []
+        let kept = ModeChangeGuard.shared.perform(permanently: Preferences.shared.permanentChanges,
+                                                  description: profile.name) {
+            let outcome = ProfileStore.shared.apply(profile)
+            warnings = outcome.warnings
+            return !outcome.applied.isEmpty
+        }
+
+        // Only complain about unmatched displays if the profile actually stuck.
+        if kept, !warnings.isEmpty {
+            report(warnings.joined(separator: "\n"))
         }
         onMenuNeedsRebuild?()
     }

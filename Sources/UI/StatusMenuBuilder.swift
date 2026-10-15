@@ -143,9 +143,7 @@ enum StatusMenuBuilder {
     }
 
     private static func isExactMatch(_ mode: DisplayMode, _ current: DisplayMode?) -> Bool {
-        guard let current else { return false }
-        return mode.resolutionKey == current.resolutionKey
-            && abs(mode.refreshRate - current.refreshRate) < 0.5
+        mode.isSame(as: current)
     }
 
     // MARK: - Rotation

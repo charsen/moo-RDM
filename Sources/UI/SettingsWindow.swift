@@ -124,6 +124,13 @@ final class SettingsViewController: NSViewController {
                                           on: Preferences.shared.restoreOnWake,
                                           action: #selector(toggleRestoreOnWake(_:))))
 
+        stack.addArrangedSubview(divider())
+
+        stack.addArrangedSubview(checkbox(L10n.t("settings.confirmChanges"),
+                                          on: Preferences.shared.confirmModeChanges,
+                                          action: #selector(toggleConfirmChanges(_:))))
+        addFullWidth(hint(L10n.t("settings.confirmChanges.hint")), to: stack)
+
         return stack
     }
 
@@ -363,6 +370,10 @@ final class SettingsViewController: NSViewController {
 
     @objc private func toggleRestoreOnWake(_ sender: NSButton) {
         Preferences.shared.restoreOnWake = sender.state == .on
+    }
+
+    @objc private func toggleConfirmChanges(_ sender: NSButton) {
+        Preferences.shared.confirmModeChanges = sender.state == .on
     }
 
     @objc private func togglePermanent(_ sender: NSButton) {

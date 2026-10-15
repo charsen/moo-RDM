@@ -143,6 +143,15 @@ public enum L10n {
         "profile.exportFailed": "Export failed: %@",
         "profile.fileError": "Profile file problem",
 
+        "guard.title": "Keep this resolution?",
+        "guard.body": "Switched to %@. If the screen does not look right, do nothing — it reverts automatically in %d seconds.",
+        "guard.seconds": "seconds until revert",
+        "guard.keep": "Keep",
+        "guard.revert": "Revert now",
+        "settings.confirmChanges": "Ask for confirmation after a mode change",
+        "settings.confirmChanges.hint": "A mode the panel cannot display leaves the screen black, with no menu bar to undo it. When on, every change is rolled back automatically unless you confirm it within 15 seconds. Turn off only if you are sure every mode you pick is safe.",
+        "cli.reverted": "Not confirmed — reverted to the previous mode.",
+
         "error.noSuchDisplay": "No display matches index %d",
         "error.noSuchMode": "No mode matches %@",
         "error.setModeFailed": "Could not set the mode (CoreGraphics error %d)",
@@ -172,12 +181,15 @@ public enum L10n {
               --all             Include modes macOS hides from the GUI
               --hidpi           Only consider HiDPI modes
               --json            Machine-readable output
+          -y, --no-confirm      Do not ask before keeping a mode macOS flags as
+                                unusable (implied when output is not a terminal)
               --apply <name>    Apply a saved profile
               --save <name>     Save the current layout as a profile
               --list-profiles   List saved profiles
           -v, --version         Print version
               --help            Show this help
               --selftest        Run GUI diagnostics (status item + menu) and exit
+              --roundtrip       With --selftest: change the mode and roll it back
 
         EXAMPLES
           rdm-arm -w 1920 -h 1080 -s 2
@@ -277,6 +289,15 @@ public enum L10n {
         "profile.exportFailed": "导出失败：%@",
         "profile.fileError": "配置文件问题",
 
+        "guard.title": "保持这个分辨率？",
+        "guard.body": "已切换到 %@。如果画面显示不正常，什么都不用做 —— %d 秒后会自动还原。",
+        "guard.seconds": "秒后自动还原",
+        "guard.keep": "保留",
+        "guard.revert": "立即还原",
+        "settings.confirmChanges": "切换分辨率后要求确认",
+        "settings.confirmChanges.hint": "显示器无法显示的模式会让画面全黑，而菜单栏正好画在这块屏上，届时没有任何办法改回来。开启后，每次切换都会在 15 秒内等你确认，不确认就自动还原。只有在你确信所选的模式都安全时才建议关闭。",
+        "cli.reverted": "未确认 —— 已还原到之前的模式。",
+
         "error.noSuchDisplay": "没有索引为 %d 的显示器",
         "error.noSuchMode": "没有匹配 %@ 的模式",
         "error.setModeFailed": "无法设置该模式（CoreGraphics 错误 %d）",
@@ -306,12 +327,15 @@ public enum L10n {
               --all             包含 macOS 从 GUI 隐藏的模式
               --hidpi           只考虑 HiDPI 模式
               --json            输出机器可读格式
+          -y, --no-confirm      对 macOS 标记为不可用的模式不再询问确认
+                                （输出不是终端时自动跳过确认）
               --apply <name>    应用已保存的配置文件
               --save <name>     将当前布局存为配置文件
               --list-profiles   列出已保存的配置文件
           -v, --version         显示版本
               --help            显示帮助
               --selftest        运行 GUI 自检（菜单栏图标 + 菜单）并退出
+              --roundtrip       配合 --selftest：真实切换一次分辨率再还原
 
         示例
           rdm-arm -w 1920 -h 1080 -s 2

@@ -36,6 +36,7 @@ public final class Preferences {
         static let permanentChanges    = "permanentChanges"
         static let rememberPerDisplay  = "rememberPerDisplay"
         static let restoreOnWake       = "restoreOnWake"
+        static let confirmModeChanges  = "confirmModeChanges"
         static let enableOptionalModule = "enableOptionalModule"
         static let language            = "language"
         static let hotkeys             = "hotkeys"
@@ -53,6 +54,7 @@ public final class Preferences {
             Key.permanentChanges: false,
             Key.rememberPerDisplay: true,
             Key.restoreOnWake: true,
+            Key.confirmModeChanges: true,
             Key.enableOptionalModule: true,
         ])
     }
@@ -89,6 +91,14 @@ public final class Preferences {
     public var restoreOnWake: Bool {
         get { defaults.bool(forKey: Key.restoreOnWake) }
         set { defaults.set(newValue, forKey: Key.restoreOnWake); changed() }
+    }
+
+    /// Ask for confirmation after a mode change and roll back if the user does
+    /// not answer. On by default — a mode the panel cannot show leaves a black
+    /// screen with no way back.
+    public var confirmModeChanges: Bool {
+        get { defaults.bool(forKey: Key.confirmModeChanges) }
+        set { defaults.set(newValue, forKey: Key.confirmModeChanges); changed() }
     }
 
     /// Gates rotation and brightness, the two features that need private interfaces.

@@ -1,5 +1,6 @@
 import AppKit
 import CoreGraphics
+import Darwin
 import Foundation
 
 /// Diagnostic mode (`--selftest`).
@@ -12,7 +13,7 @@ import Foundation
 /// to answer "did the icon actually make it onto the menu bar?".
 enum GUISelfTest {
 
-    static func run() -> Int32 {
+    static func run(arguments: [String] = []) -> Int32 {
         let application = NSApplication.shared
         application.setActivationPolicy(.accessory)
 
@@ -103,10 +104,82 @@ enum GUISelfTest {
             emit("    brightness: \(DisplayBrightnessController.canChangeBrightness(of: display.id) ? "available" : "unavailable")")
         }
 
+        // --- mode change guard ---
+        //
+        // The guard is the only thing standing between a user and a black screen,
+        // so its configuration is worth reporting rather than assuming.
+        emit("")
+        emit("-- mode change guard --")
+        emit("confirm pref : \(Preferences.shared.confirmModeChanges ? "on" : "off")")
+        emit("timeout      : \(Int(ModeChangeGuard.timeout))s")
+        emit("stdin is tty : \(isatty(STDIN_FILENO) == 1)  (CLI prompts only on a terminal)")
+
+        let snapshot = ModeChangeGuard.shared.snapshotBefore()
+        emit("snapshot     : \(snapshot.count) display(s) can be restored")
+
+        let everyMode = displays.flatMap { DisplayManager.allModes(for: $0.id, includeUnusable: true) }
+        let risky = everyMode.filter { !$0.isUsable }.count
+        emit("risky modes  : \(risky) of \(everyMode.count) are flagged not usable for the desktop GUI")
+
+        if arguments.contains("--roundtrip") {
+            guard roundTrip(emit: emit) else { return 1 }
+        }
+
         emit("")
         emit("RESULT: self test completed")
 
         return 0
+    }
+
+    /// Exercises the guard's rollback for real: change the mode, then put it back
+    /// and check the display actually returned.
+    ///
+    /// Opt-in (`--selftest --roundtrip`) because it visibly changes the screen for
+    /// a moment. It picks the *closest* usable mode rather than an arbitrary one
+    /// so the flicker is as small as the hardware allows, and it always restores
+    /// before returning.
+    private static func roundTrip(emit: (String) -> Void) -> Bool {
+        emit("")
+        emit("-- guard round trip --")
+
+        guard let display = DisplayManager.allDisplays().first,
+              let current = display.currentMode else {
+            emit("FAIL: no display to test against")
+            return false
+        }
+
+        let usable = DisplayManager.allModes(for: display.id, includeUnusable: false)
+            .filter { !$0.isSame(as: current) }
+        guard let target = usable.min(by: {
+            abs($0.width - current.width) + abs($0.height - current.height)
+                < abs($1.width - current.width) + abs($1.height - current.height)
+        }) else {
+            emit("SKIP: this display only offers one usable mode")
+            return true
+        }
+
+        let before = ModeChangeGuard.shared.snapshotBefore()
+        emit("from         : \(current.menuTitle)")
+        emit("to           : \(target.menuTitle)")
+
+        guard case .success = ModeController.apply(target, permanently: false) else {
+            emit("FAIL: could not apply the test mode")
+            return false
+        }
+        let applied = DisplayManager.currentMode(for: display.id)
+        emit("applied      : \(applied?.menuTitle ?? "?")")
+
+        ModeChangeGuard.shared.rollback(to: before, permanently: false)
+
+        let restored = DisplayManager.currentMode(for: display.id)
+        emit("rolled back  : \(restored?.menuTitle ?? "?")")
+
+        guard let restored, restored.isSame(as: current) else {
+            emit("FAIL: the display did not return to \(current.menuTitle)")
+            return false
+        }
+        emit("PASS: rollback restored the original mode")
+        return true
     }
 
     // MARK: - Helpers
