@@ -39,11 +39,6 @@ final class DisplayBox: NSObject {
     }
 }
 
-final class ProfileBox: NSObject {
-    let profileID: UUID
-    init(profileID: UUID) { self.profileID = profileID }
-}
-
 // MARK: - Router
 
 /// Target for every menu item action.
@@ -187,58 +182,6 @@ final class MenuActionRouter: NSObject {
 
     @objc func restoreRememberedModes(_ sender: NSMenuItem) {
         memory.restoreRememberedModes()
-        onMenuNeedsRebuild?()
-    }
-
-    // MARK: - Profiles
-
-    @objc func saveProfile(_ sender: NSMenuItem) {
-        let alert = NSAlert()
-        alert.messageText = L10n.t("menu.saveProfile")
-        alert.informativeText = L10n.t("profile.empty")
-        alert.addButton(withTitle: L10n.t("profile.save"))
-        alert.addButton(withTitle: L10n.t("profile.cancel"))
-
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
-        field.placeholderString = L10n.t("profile.name")
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd HH:mm"
-        field.stringValue = formatter.string(from: Date())
-        alert.accessoryView = field
-        alert.window.initialFirstResponder = field
-
-        NSApp.activate(ignoringOtherApps: true)
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-
-        let name = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else { return }
-        ProfileStore.shared.upsert(ProfileStore.shared.captureCurrentLayout(named: name))
-        onMenuNeedsRebuild?()
-    }
-
-    @objc func applyProfile(_ sender: NSMenuItem) {
-        guard let box = sender.representedObject as? ProfileBox,
-              let profile = ProfileStore.shared.profiles.first(where: { $0.id == box.profileID })
-        else { return }
-
-        var warnings: [String] = []
-        let kept = ModeChangeGuard.shared.perform(permanently: Preferences.shared.permanentChanges,
-                                                  description: profile.name) {
-            let outcome = ProfileStore.shared.apply(profile)
-            warnings = outcome.warnings
-            return !outcome.applied.isEmpty
-        }
-
-        // Only complain about unmatched displays if the profile actually stuck.
-        if kept, !warnings.isEmpty {
-            report(warnings.joined(separator: "\n"))
-        }
-        onMenuNeedsRebuild?()
-    }
-
-    @objc func deleteProfile(_ sender: NSMenuItem) {
-        guard let box = sender.representedObject as? ProfileBox else { return }
-        ProfileStore.shared.delete(id: box.profileID)
         onMenuNeedsRebuild?()
     }
 

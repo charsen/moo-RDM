@@ -3,10 +3,9 @@ import Foundation
 
 /// Stable identity for a physical display.
 ///
-/// Used to remember per-display settings (preferred mode, rotation, profile
-/// membership) across unplug/replug cycles and reboots. Display *IDs*
-/// (`CGDirectDisplayID`) are reassigned by the system on every reconnect, so
-/// they must never be persisted.
+/// Used to remember per-display settings (preferred mode, rotation) across
+/// unplug/replug cycles and reboots. Display *IDs* (`CGDirectDisplayID`) are
+/// reassigned by the system on every reconnect, so they must never be persisted.
 public struct DisplayIdentity: Codable, Hashable, Sendable {
 
     public let vendor: UInt32

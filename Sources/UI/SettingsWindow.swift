@@ -35,7 +35,6 @@ final class SettingsViewController: NSViewController {
 
     private let onHotKeysChanged: () -> Void
     private var tabView: NSTabView!
-    private var profilesStack: NSStackView!
 
     init(onHotKeysChanged: @escaping () -> Void) {
         self.onHotKeysChanged = onHotKeysChanged
@@ -58,7 +57,6 @@ final class SettingsViewController: NSViewController {
 
         addTab(L10n.t("settings.general"), generalTab())
         addTab(L10n.t("settings.hotkeys"), hotkeysTab())
-        addTab(L10n.t("settings.profiles"), profilesTab())
         addTab(L10n.t("settings.advanced"), advancedTab())
         addTab(L10n.t("settings.about"), aboutTab())
     }
@@ -144,16 +142,6 @@ final class SettingsViewController: NSViewController {
             stack.addArrangedSubview(hotkeyRow(action: action, title: HotKeyAction.label(for: action)))
         }
 
-        let profiles = ProfileStore.shared.profiles
-        if !profiles.isEmpty {
-            stack.addArrangedSubview(divider())
-            stack.addArrangedSubview(sectionLabel(L10n.t("menu.profiles")))
-            for profile in profiles {
-                stack.addArrangedSubview(hotkeyRow(action: HotKeyAction.profile(profile.id),
-                                                   title: profile.name))
-            }
-        }
-
         return stack
     }
 
@@ -171,73 +159,6 @@ final class SettingsViewController: NSViewController {
         row.alignment = .centerY
         row.distribution = .fill
         return row
-    }
-
-    // MARK: - Profiles
-
-    private func profilesTab() -> NSView {
-        let stack = verticalStack()
-
-        let nameField = NSTextField(frame: .zero)
-        nameField.placeholderString = L10n.t("profile.name")
-        nameField.widthAnchor.constraint(greaterThanOrEqualToConstant: 240).isActive = true
-
-        let saveButton = NSButton(title: L10n.t("profile.save"), target: self, action: #selector(saveProfile(_:)))
-        saveButton.bezelStyle = .rounded
-        saveButton.keyEquivalent = "\r"
-
-        let inputRow = NSStackView(views: [nameField, saveButton])
-        inputRow.orientation = .horizontal
-        inputRow.spacing = 8
-        addFullWidth(inputRow, to: stack)
-
-        addFullWidth(hint(L10n.t("profile.empty")), to: stack)
-        stack.addArrangedSubview(divider())
-
-        profilesStack = verticalStack(spacing: 4)
-        addFullWidth(profilesStack, to: stack)
-        rebuildProfileRows()
-
-        return stack
-    }
-
-    private func rebuildProfileRows() {
-        guard let profilesStack else { return }
-        for subview in profilesStack.arrangedSubviews { subview.removeFromSuperview() }
-
-        let profiles = ProfileStore.shared.profiles
-        if profiles.isEmpty {
-            profilesStack.addArrangedSubview(hint(L10n.t("menu.noProfiles")))
-            return
-        }
-
-        for profile in profiles {
-            let name = NSTextField(labelWithString: profile.name)
-            name.font = .systemFont(ofSize: 12, weight: .medium)
-
-            let summary = NSTextField(labelWithString: profile.summary)
-            summary.font = .systemFont(ofSize: 10)
-            summary.textColor = .secondaryLabelColor
-
-            let text = NSStackView(views: [name, summary])
-            text.orientation = .vertical
-            text.alignment = .leading
-            text.spacing = 1
-
-            let applyButton = NSButton(title: L10n.t("menu.apply"), target: self, action: #selector(applyProfile(_:)))
-            applyButton.bezelStyle = .rounded
-            applyButton.identifier = NSUserInterfaceItemIdentifier(profile.id.uuidString)
-
-            let deleteButton = NSButton(title: L10n.t("menu.delete"), target: self, action: #selector(deleteProfile(_:)))
-            deleteButton.bezelStyle = .rounded
-            deleteButton.identifier = NSUserInterfaceItemIdentifier(profile.id.uuidString)
-
-            let row = NSStackView(views: [text, NSView(), applyButton, deleteButton])
-            row.orientation = .horizontal
-            row.alignment = .centerY
-            row.spacing = 6
-            addFullWidth(row, to: profilesStack)
-        }
     }
 
     // MARK: - Advanced
@@ -268,13 +189,7 @@ final class SettingsViewController: NSViewController {
 
         let copyButton = NSButton(title: L10n.t("settings.diagnostics"), target: self, action: #selector(copyDiagnostics(_:)))
         copyButton.bezelStyle = .rounded
-        let revealButton = NSButton(title: L10n.t("settings.revealSupport"), target: self, action: #selector(revealSupport(_:)))
-        revealButton.bezelStyle = .rounded
-
-        let buttonRow = NSStackView(views: [copyButton, revealButton])
-        buttonRow.orientation = .horizontal
-        buttonRow.spacing = 8
-        stack.addArrangedSubview(buttonRow)
+        stack.addArrangedSubview(copyButton)
 
         let diagnostics = NSTextField(wrappingLabelWithString: AppInfo.diagnostics())
         diagnostics.font = .monospacedSystemFont(ofSize: 9, weight: .regular)
@@ -371,33 +286,6 @@ final class SettingsViewController: NSViewController {
         Preferences.shared.enableOptionalModule = sender.state == .on
     }
 
-    @objc private func saveProfile(_ sender: NSButton) {
-        guard let field = (sender.superview as? NSStackView)?.arrangedSubviews.first as? NSTextField else { return }
-        let name = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else { NSSound.beep(); return }
-        ProfileStore.shared.upsert(ProfileStore.shared.captureCurrentLayout(named: name))
-        field.stringValue = ""
-        rebuildProfileRows()
-    }
-
-    @objc private func applyProfile(_ sender: NSButton) {
-        guard let id = sender.identifier.flatMap({ UUID(uuidString: $0.rawValue) }),
-              let profile = ProfileStore.shared.profiles.first(where: { $0.id == id }) else { return }
-        let report = ProfileStore.shared.apply(profile)
-        if !report.warnings.isEmpty {
-            let alert = NSAlert()
-            alert.messageText = L10n.t("profile.partial", "")
-            alert.informativeText = report.warnings.joined(separator: "\n")
-            alert.runModal()
-        }
-    }
-
-    @objc private func deleteProfile(_ sender: NSButton) {
-        guard let id = sender.identifier.flatMap({ UUID(uuidString: $0.rawValue) }) else { return }
-        ProfileStore.shared.delete(id: id)
-        rebuildProfileRows()
-    }
-
     @objc private func copyDiagnostics(_ sender: NSButton) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(AppInfo.diagnostics(), forType: .string)
@@ -405,10 +293,6 @@ final class SettingsViewController: NSViewController {
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
             sender.title = L10n.t("settings.diagnostics")
         }
-    }
-
-    @objc private func revealSupport(_ sender: NSButton) {
-        NSWorkspace.shared.activateFileViewerSelecting([Preferences.supportDirectory])
     }
 
     @objc private func openUpstream(_ sender: NSButton) {

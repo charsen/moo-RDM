@@ -5,8 +5,8 @@ import Foundation
 /// Command-line interface.
 ///
 /// Flag names stay close to the original RDM so muscle memory carries over
-/// (`-w`, `-h`, `-s`, `-d`, `-lm`, `-ld`), with additions for rotation, JSON
-/// output and profiles.
+/// (`-w`, `-h`, `-s`, `-d`, `-lm`, `-ld`), with additions for rotation and JSON
+/// output.
 public enum CommandLineRunner {
 
     // MARK: - Options
@@ -21,16 +21,12 @@ public enum CommandLineRunner {
 
         var listDisplays = false
         var listModes = false
-        var listProfiles = false
 
         var includeUnusable = true
         var hiDPIOnly = false
         var json = false
         var permanent = false
         var noConfirm = false
-
-        var saveProfile: String?
-        var applyProfile: String?
 
         var showHelp = false
         var showVersion = false
@@ -75,15 +71,6 @@ public enum CommandLineRunner {
         }
         if options.listModes {
             return listModes(options)
-        }
-        if options.listProfiles {
-            return listProfiles(options)
-        }
-        if let name = options.saveProfile {
-            return saveProfile(named: name, options: options)
-        }
-        if let name = options.applyProfile {
-            return applyProfile(named: name, options: options)
         }
         if options.wantsChange {
             return changeMode(options)
@@ -136,8 +123,6 @@ public enum CommandLineRunner {
                 options.listDisplays = true
             case "-lm", "--modes":
                 options.listModes = true
-            case "--list-profiles":
-                options.listProfiles = true
             case "--all":
                 options.includeUnusable = true
             case "--usable-only":
@@ -172,10 +157,6 @@ public enum CommandLineRunner {
                 options.displayIndex = try intValue(argument)
             case "--rotation":
                 options.rotation = try doubleValue(argument)
-            case "--save":
-                options.saveProfile = try value(argument)
-            case "--apply":
-                options.applyProfile = try value(argument)
 
             default:
                 // Support the original's bundled short form, e.g. "-w1920".
@@ -283,39 +264,6 @@ public enum CommandLineRunner {
             }
         }
         return 0
-    }
-
-    private static func listProfiles(_ options: Options) -> Int32 {
-        let profiles = ProfileStore.shared.profiles
-        guard !profiles.isEmpty else {
-            print(L10n.t("menu.noProfiles"))
-            return 0
-        }
-        for profile in profiles {
-            print("\(profile.name)")
-            for target in profile.targets {
-                print("    \(target.displayName): \(target.resolutionDescription)")
-            }
-        }
-        return 0
-    }
-
-    private static func saveProfile(named name: String, options: Options) -> Int32 {
-        let profile = ProfileStore.shared.captureCurrentLayout(named: name)
-        ProfileStore.shared.upsert(profile)
-        print("saved profile “\(name)” with \(profile.targets.count) display(s)")
-        return 0
-    }
-
-    private static func applyProfile(named name: String, options: Options) -> Int32 {
-        guard let profile = ProfileStore.shared.profile(named: name) else {
-            writeError("no profile named “\(name)”")
-            return 1
-        }
-        let report = ProfileStore.shared.apply(profile, permanently: options.permanent)
-        for line in report.applied { print("applied  \(line)") }
-        for line in report.warnings { writeError("warning  \(line)") }
-        return report.applied.isEmpty ? 1 : 0
     }
 
     private static func changeMode(_ options: Options) -> Int32 {

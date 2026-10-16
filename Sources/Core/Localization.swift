@@ -77,11 +77,6 @@ public enum L10n {
         "menu.rememberMode": "Remember this display's mode",
         "menu.forgetMode": "Forget remembered mode",
         "menu.restoreRemembered": "Restore remembered modes",
-        "menu.profiles": "Profiles",
-        "menu.saveProfile": "Save current layout as profile…",
-        "menu.noProfiles": "No saved profiles",
-        "menu.apply": "Apply",
-        "menu.delete": "Delete",
         "menu.preferences": "Preferences…",
         "menu.about": "About RDM-ARM",
         "menu.quit": "Quit RDM-ARM",
@@ -97,7 +92,6 @@ public enum L10n {
         "settings.title": "RDM-ARM Preferences",
         "settings.general": "General",
         "settings.hotkeys": "Shortcuts",
-        "settings.profiles": "Profiles",
         "settings.advanced": "Advanced",
         "settings.about": "About",
 
@@ -119,23 +113,14 @@ public enum L10n {
         "settings.hotkeyNext": "Next resolution",
         "settings.hotkeyPrevious": "Previous resolution",
         "settings.hotkeyToggleHiDPI": "Toggle HiDPI mode",
-        "settings.hotkeyProfile": "Apply profile %d",
         "settings.diagnostics": "Copy diagnostics",
         "settings.diagnostics.done": "Copied",
-        "settings.revealSupport": "Reveal support folder",
 
         "about.version": "Version %@",
         "about.credits": "A native Apple silicon rework of RDM by Avi Alkalay.",
         "about.license": "Upstream RDM carries no formal licence; this rework is provided as-is.",
         "about.engine": "Display engine: public CoreGraphics API only.",
         "about.repo": "Source code",
-
-        "profile.name": "Profile name",
-        "profile.save": "Save",
-        "profile.cancel": "Cancel",
-        "profile.empty": "Save a profile to capture the current mode of every connected display.",
-        "profile.applied": "Applied profile “%@”",
-        "profile.partial": "Applied with warnings: %@",
 
         "guard.title": "Keep this setting?",
         "guard.body": "Switched to %@. If the screen does not look right, do nothing — it reverts automatically in %d seconds.",
@@ -177,9 +162,6 @@ public enum L10n {
               --json            Machine-readable output
           -y, --no-confirm      Do not ask before keeping a mode macOS flags as
                                 unusable (implied when output is not a terminal)
-              --apply <name>    Apply a saved profile
-              --save <name>     Save the current layout as a profile
-              --list-profiles   List saved profiles
           -v, --version         Print version
               --help            Show this help
               --selftest        Run GUI diagnostics (status item + menu) and exit
@@ -217,11 +199,6 @@ public enum L10n {
         "menu.rememberMode": "记住此显示器的模式",
         "menu.forgetMode": "忘记已记住的模式",
         "menu.restoreRemembered": "恢复已记住的模式",
-        "menu.profiles": "配置文件",
-        "menu.saveProfile": "将当前布局存为配置文件…",
-        "menu.noProfiles": "暂无配置文件",
-        "menu.apply": "应用",
-        "menu.delete": "删除",
         "menu.preferences": "偏好设置…",
         "menu.about": "关于 RDM-ARM",
         "menu.quit": "退出 RDM-ARM",
@@ -237,7 +214,6 @@ public enum L10n {
         "settings.title": "RDM-ARM 偏好设置",
         "settings.general": "通用",
         "settings.hotkeys": "快捷键",
-        "settings.profiles": "配置文件",
         "settings.advanced": "高级",
         "settings.about": "关于",
 
@@ -259,23 +235,14 @@ public enum L10n {
         "settings.hotkeyNext": "下一个分辨率",
         "settings.hotkeyPrevious": "上一个分辨率",
         "settings.hotkeyToggleHiDPI": "切换 HiDPI 模式",
-        "settings.hotkeyProfile": "应用配置文件 %d",
         "settings.diagnostics": "复制诊断信息",
         "settings.diagnostics.done": "已复制",
-        "settings.revealSupport": "打开支持文件夹",
 
         "about.version": "版本 %@",
         "about.credits": "基于 Avi Alkalay 的 RDM 重写的原生 Apple 芯片版本。",
         "about.license": "上游 RDM 未附正式许可证，本重写版按原样提供。",
         "about.engine": "显示引擎：仅使用公开 CoreGraphics API。",
         "about.repo": "源代码",
-
-        "profile.name": "配置文件名称",
-        "profile.save": "存储",
-        "profile.cancel": "取消",
-        "profile.empty": "存储配置文件可记录当前所有显示器的模式。",
-        "profile.applied": "已应用配置文件「%@」",
-        "profile.partial": "已应用，但有以下问题：%@",
 
         "guard.title": "保持这个设置？",
         "guard.body": "已切换到 %@。如果画面显示不正常，什么都不用做 —— %d 秒后会自动还原。",
@@ -317,9 +284,6 @@ public enum L10n {
               --json            输出机器可读格式
           -y, --no-confirm      对 macOS 标记为不可用的模式不再询问确认
                                 （输出不是终端时自动跳过确认）
-              --apply <name>    应用已保存的配置文件
-              --save <name>     将当前布局存为配置文件
-              --list-profiles   列出已保存的配置文件
           -v, --version         显示版本
               --help            显示帮助
               --selftest        运行 GUI 自检（菜单栏图标 + 菜单）并退出

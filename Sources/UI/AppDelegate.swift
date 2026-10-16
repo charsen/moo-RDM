@@ -92,15 +92,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self?.rebuildMenu()
             }
         }
-
-        for profile in ProfileStore.shared.profiles {
-            let key = HotKeyAction.profile(profile.id)
-            guard let spec = Preferences.shared.hotkey(for: key) else { continue }
-            HotKeyCenter.shared.register(spec) { [weak self] in
-                _ = ProfileStore.shared.apply(profile)
-                self?.rebuildMenu()
-            }
-        }
     }
 
     /// Moves the main display one step through its distinct resolutions.

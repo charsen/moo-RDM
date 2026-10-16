@@ -32,8 +32,6 @@ enum StatusMenuBuilder {
         }
 
         menu.addItem(.separator())
-        menu.addItem(profilesItem(router: router))
-        menu.addItem(.separator())
 
         menu.addItem(action(L10n.t("menu.preferences"),
                             #selector(MenuActionRouter.openPreferences(_:)),
@@ -254,33 +252,6 @@ enum StatusMenuBuilder {
                           #selector(MenuActionRouter.toggleHiDPIOnly(_:)), router)
         item.state = Preferences.shared.hiDPIOnly ? .on : .off
         return item
-    }
-
-    // MARK: - Profiles
-
-    private static func profilesItem(router: MenuActionRouter) -> NSMenuItem {
-        let parent = NSMenuItem(title: L10n.t("menu.profiles"), action: nil, keyEquivalent: "")
-        let submenu = NSMenu()
-
-        let profiles = ProfileStore.shared.profiles
-        if profiles.isEmpty {
-            submenu.addItem(disabled(L10n.t("menu.noProfiles")))
-        } else {
-            for profile in profiles {
-                let item = action(profile.name,
-                                  #selector(MenuActionRouter.applyProfile(_:)), router)
-                item.representedObject = ProfileBox(profileID: profile.id)
-                item.toolTip = profile.summary
-                submenu.addItem(item)
-            }
-        }
-
-        submenu.addItem(.separator())
-        submenu.addItem(action(L10n.t("menu.saveProfile"),
-                               #selector(MenuActionRouter.saveProfile(_:)), router))
-
-        parent.submenu = submenu
-        return parent
     }
 
     // MARK: - Item helpers

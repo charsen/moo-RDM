@@ -184,21 +184,4 @@ public final class Preferences {
         guard let data = try? JSONEncoder().encode(value) else { return }
         defaults.set(data, forKey: key)
     }
-
-    // MARK: - Support folder
-
-    /// `~/Library/Application Support/RDM-ARM` — where profiles live.
-    public static var supportDirectory: URL {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory,
-                                            in: .userDomainMask).first
-            ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
-        return base.appendingPathComponent("RDM-ARM", isDirectory: true)
-    }
-
-    @discardableResult
-    public static func ensureSupportDirectory() -> URL {
-        let url = supportDirectory
-        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        return url
-    }
 }

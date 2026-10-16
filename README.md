@@ -4,7 +4,7 @@
 
 **让 macOS 显示器跑出它真正支持的任何分辨率。**
 
-RDM-ARM 是 [avibrazil/RDM](https://github.com/avibrazil/RDM) 的原生 Apple 芯片重写版。原版已经停止维护，在新版 macOS 上只能"凑合能用"——分辨率能列出来，但刷新率和色彩深度是错的。这个重写版换掉了失效的实现方式，恢复完整功能，并补上了原版没有的快捷键、配置文件和屏幕热插拔记忆。
+RDM-ARM 是 [avibrazil/RDM](https://github.com/avibrazil/RDM) 的原生 Apple 芯片重写版。原版已经停止维护，在新版 macOS 上只能"凑合能用"——分辨率能列出来，但刷新率和色彩深度是错的。这个重写版换掉了失效的实现方式，恢复完整功能，并补上了原版没有的快捷键和屏幕热插拔记忆。
 
 - 原生 **arm64**，不需要 Rosetta
 - **不需要 Xcode**，只要装了 Command Line Tools 就能构建
@@ -75,17 +75,16 @@ CGDisplayCopyAllDisplayModes(display, [
 
 | 功能 | 说明 |
 |---|---|
-| **全局快捷键** | 下一个 / 上一个分辨率、切换只看 HiDPI、按配置文件切换 |
+| **全局快捷键** | 下一个 / 上一个分辨率、切换只看 HiDPI |
 | **每屏模式记忆** | 记住每块屏幕用的模式，重插后自动恢复 |
 | **热插拔监听** | `CGDisplayRegisterReconfigurationCallback`，显示器插拔时菜单自动更新 |
-| **配置文件** | 把多屏布局存成命名快照，一键切回 |
 | **旋转** | 0° / 90° / 180° / 270°，能力探测驱动 |
 | **亮度** | 仅在支持的显示器上出现 |
 | **黑屏保护** | 切换后 15 秒内不确认就自动还原，见下节 |
 
 ### 命令行
 
-保留原版的 `-w` / `-h` / `-s` / `-d` / `-lm` / `-ld`，并扩展了旋转、JSON 输出和配置文件：
+保留原版的 `-w` / `-h` / `-s` / `-d` / `-lm` / `-ld`，并扩展了旋转和 JSON 输出：
 
 ```bash
 rdm-arm -ld                        # 列出已连接的显示器
@@ -94,8 +93,6 @@ rdm-arm -lm --json | jq .          # 机器可读输出
 rdm-arm -w 1920 -h 1080 -s 2       # 切到 1920×1080 HiDPI
 rdm-arm -w 2304 -h 1296 -s 2 -r 60 # 指定刷新率
 rdm-arm --rotation 90              # 旋转 90°
-rdm-arm --save desk                # 保存当前布局
-rdm-arm --apply desk               # 恢复布局
 rdm-arm -w 3840 -h 2160 -y         # 跳过确认（脚本用）
 rdm-arm --selftest                 # GUI 自检：菜单栏图标位置 + 菜单结构
 rdm-arm --selftest --roundtrip     # 自检并真实跑一遍「切换 → 还原」
@@ -224,7 +221,6 @@ Sources/
     ModeMemoryController.swift    每屏记忆 + 热插拔恢复
     ModeChangeGuard.swift         黑屏保护：切换后自动还原
     Preferences.swift             偏好设置持久化
-    ProfileStore.swift            配置文件存储与应用
   UI/
     AppDelegate.swift         菜单栏生命周期
     StatusMenuBuilder.swift   菜单构建

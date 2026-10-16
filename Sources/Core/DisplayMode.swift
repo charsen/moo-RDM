@@ -149,7 +149,7 @@ public struct DisplayMode: Hashable, Identifiable {
     }
 
     /// `menuTitle` plus the refresh rate, for places where the rate is not shown
-    /// separately — the change-confirmation panel, alerts, profile summaries.
+    /// separately — the change-confirmation panel and alerts.
     /// Without this, changing only the refresh rate reports the same resolution
     /// back to the user and reads as if nothing happened.
     public var detailedTitle: String {

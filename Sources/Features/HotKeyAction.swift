@@ -4,14 +4,15 @@ import Foundation
 ///
 /// These strings are persisted in `UserDefaults`, so they must not be renamed
 /// without a migration.
+///
+/// Per-profile shortcuts used to live here as `profile.<uuid>`. The profile
+/// feature was removed in 1.0.4, so any such entries left in `UserDefaults` are
+/// simply never read — they are inert, not a migration hazard.
 public enum HotKeyAction {
 
     public static let nextResolution = "nextResolution"
     public static let previousResolution = "previousResolution"
     public static let toggleHiDPI = "toggleHiDPI"
-
-    /// Per-profile shortcuts, keyed by profile UUID.
-    public static func profile(_ id: UUID) -> String { "profile.\(id.uuidString)" }
 
     /// The three always-available actions, in menu order.
     public static let builtIn: [String] = [nextResolution, previousResolution, toggleHiDPI]
