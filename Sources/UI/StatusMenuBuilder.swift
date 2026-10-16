@@ -25,12 +25,6 @@ enum StatusMenuBuilder {
         menu.addItem(showHiddenModesItem(router: router))
         menu.addItem(hiDPIOnlyItem(router: router))
 
-        if !Preferences.shared.rememberedModes.isEmpty {
-            menu.addItem(action(L10n.t("menu.restoreRemembered"),
-                                #selector(MenuActionRouter.restoreRememberedModes(_:)),
-                                router))
-        }
-
         menu.addItem(.separator())
 
         menu.addItem(action(L10n.t("menu.preferences"),
@@ -64,7 +58,7 @@ enum StatusMenuBuilder {
         }
         submenu.addItem(.separator())
 
-        let box = DisplayBox(displayID: display.id, identityKey: display.identity.key)
+        let box = DisplayBox(displayID: display.id)
         let reset = action(L10n.t("menu.resetToDefault"),
                            #selector(MenuActionRouter.resetToDefault(_:)), router)
         reset.representedObject = box
@@ -75,10 +69,6 @@ enum StatusMenuBuilder {
         }
         if let brightnessItem = brightnessItem(for: display, router: router) {
             submenu.addItem(brightnessItem)
-        }
-        if let memoryItem = memoryItem(for: display, router: router) {
-            submenu.addItem(.separator())
-            submenu.addItem(memoryItem)
         }
 
         parent.submenu = submenu
@@ -141,6 +131,11 @@ enum StatusMenuBuilder {
     ///
     /// Listing rates from every geometry would make this a second resolution
     /// picker. Rates that would drag the geometry along are simply not offered.
+    ///
+    /// The menu appears even when the display offers a single rate. Hiding it
+    /// makes a working display look like a broken feature — a lone ticked entry
+    /// says "this panel only does 60 Hz", which is the honest answer, rather than
+    /// saying nothing at all.
     private static func refreshRateItem(for display: DisplayInfo,
                                         router: MenuActionRouter) -> NSMenuItem? {
         guard let current = display.currentMode else { return nil }
@@ -150,12 +145,14 @@ enum StatusMenuBuilder {
             .filter { $0.resolutionKey == current.resolutionKey }
             .sorted { $0.refreshRate > $1.refreshRate }
 
-        // A single rate is not a choice, and a rate of 0 means the display did not
-        // report one. Hide the menu rather than show a dead control.
-        guard rates.count > 1 else { return nil }
-
         let parent = NSMenuItem(title: L10n.t("menu.refreshRate"), action: nil, keyEquivalent: "")
         let submenu = NSMenu()
+
+        // Nothing to offer because the current geometry was filtered out: show the
+        // rate in use rather than an empty menu.
+        if rates.isEmpty {
+            submenu.addItem(disabled(current.refreshDescription))
+        }
 
         for rate in rates {
             let item = action(rate.refreshDescription,
@@ -214,27 +211,6 @@ enum StatusMenuBuilder {
 
         parent.submenu = submenu
         return parent
-    }
-
-    // MARK: - Mode memory
-
-    private static func memoryItem(for display: DisplayInfo,
-                                   router: MenuActionRouter) -> NSMenuItem? {
-        guard Preferences.shared.rememberPerDisplay else { return nil }
-        let box = DisplayBox(displayID: display.id, identityKey: display.identity.key)
-
-        if let remembered = Preferences.shared.rememberedModes[display.identity.key] {
-            let item = action(L10n.t("menu.forgetMode"),
-                              #selector(MenuActionRouter.forgetRememberedMode(_:)), router)
-            item.representedObject = box
-            item.toolTip = remembered.displayName
-            return item
-        }
-
-        let item = action(L10n.t("menu.rememberMode"),
-                          #selector(MenuActionRouter.rememberCurrentMode(_:)), router)
-        item.representedObject = box
-        return item
     }
 
     // MARK: - View toggles

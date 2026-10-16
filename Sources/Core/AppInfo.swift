@@ -22,9 +22,10 @@ public enum AppInfo {
         lines.append(versionDescription)
         lines.append("macOS \(ProcessInfo.processInfo.operatingSystemVersionString)")
         lines.append("architecture: \(architecture)")
-        lines.append("engine: public CoreGraphics API")
+        lines.append("engine: CoreGraphics (public; optional module adds private interfaces)")
         lines.append("optional module enabled: \(Preferences.shared.enableOptionalModule)")
         lines.append("SLSSetDisplayRotation present: \(DisplayRotationController.isSymbolPresent)")
+        lines.append("private mode table: \(PrivateModeTable.isSymbolPresent ? "present" : "absent")")
 
         let displays = DisplayManager.allDisplays()
         lines.append("displays: \(displays.count)")
@@ -38,9 +39,12 @@ public enum AppInfo {
                 lines.append("      native=\(native.description)")
             }
             let all = DisplayManager.allModes(for: display.id)
-            let usable = all.filter(\.isUsable).count
-            let hiDPI = all.filter(\.isHiDPI).count
-            lines.append("      modes=\(all.count) (usable=\(usable), hidpi=\(hiDPI))")
+            let exposed = all.filter { !$0.isPrivate }
+            let usable = exposed.filter(\.isUsable).count
+            let hiDPI = exposed.filter(\.isHiDPI).count
+            let hidden = all.count - exposed.count
+            lines.append("      modes=\(exposed.count) (usable=\(usable), hidpi=\(hiDPI))"
+                         + (hidden > 0 ? " + \(hidden) hidden HiDPI" : ""))
         }
         return lines.joined(separator: "\n")
     }

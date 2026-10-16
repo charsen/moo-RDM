@@ -36,16 +36,28 @@ public enum ModeController {
     ///
     /// - Parameter permanently: persist across restarts (`kCGConfigurePermanently`)
     ///   instead of only for this session (`kCGConfigureForSession`).
+    ///
+    /// Modes that only exist in the private table have no `CGDisplayMode`, so they
+    /// take the private configure call instead of the public one. Everything else
+    /// goes through the public API as before.
     @discardableResult
     public static func apply(_ mode: DisplayMode,
                              permanently: Bool = false) -> Result<Void, ApplyError> {
+        guard let cgMode = mode.cgMode else {
+            let status = PrivateModeTable.apply(modeID: mode.modeID,
+                                                on: mode.displayID,
+                                                permanently: permanently)
+            guard status == .success else { return .failure(.configureFailed(status)) }
+            return .success(())
+        }
+
         var config: CGDisplayConfigRef?
         let begin = CGBeginDisplayConfiguration(&config)
         guard begin == .success, let config else {
             return .failure(.beginFailed(begin))
         }
 
-        let configure = CGConfigureDisplayWithDisplayMode(config, mode.displayID, mode.cgMode, nil)
+        let configure = CGConfigureDisplayWithDisplayMode(config, mode.displayID, cgMode, nil)
         guard configure == .success else {
             CGCancelDisplayConfiguration(config)
             return .failure(.configureFailed(configure))
@@ -143,34 +155,5 @@ public enum ModeController {
         case .success:            return .success(mode)
         case .failure(let error): return .failure(error)
         }
-    }
-
-    // MARK: - Stepping
-
-    /// The ordered list of distinct resolutions for a display, used by the
-    /// "next / previous resolution" shortcuts.
-    public static func resolutionSteps(on displayID: CGDirectDisplayID,
-                                       includeUnusable: Bool,
-                                       hiDPIOnly: Bool) -> [DisplayMode] {
-        var modes = DisplayManager.allModes(for: displayID, includeUnusable: includeUnusable)
-        if hiDPIOnly { modes = modes.filter(\.isHiDPI) }
-        // One representative (highest refresh) per resolution group, widest first.
-        return modes
-            .groupedByResolution()
-            .compactMap { $0.refreshRates.first }
-            .sortedForMenu()
-    }
-
-    /// Returns the mode one step away from the current one in `steps`.
-    public static func step(from current: DisplayMode?,
-                            in steps: [DisplayMode],
-                            offset: Int) -> DisplayMode? {
-        guard !steps.isEmpty else { return nil }
-        guard let current,
-              let index = steps.firstIndex(where: { $0.resolutionKey == current.resolutionKey })
-        else { return steps.first }
-
-        let next = (index + offset + steps.count) % steps.count
-        return steps[next]
     }
 }

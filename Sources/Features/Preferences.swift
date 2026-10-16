@@ -36,10 +36,8 @@ public final class Preferences {
         static let permanentChanges    = "permanentChanges"
         static let rememberPerDisplay  = "rememberPerDisplay"
         static let restoreOnWake       = "restoreOnWake"
-        static let confirmModeChanges  = "confirmModeChanges"
         static let enableOptionalModule = "enableOptionalModule"
         static let language            = "language"
-        static let hotkeys             = "hotkeys"
         static let rememberedModes     = "rememberedModes"
         static let hasCompletedOnboarding = "hasCompletedOnboarding"
     }
@@ -49,12 +47,11 @@ public final class Preferences {
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         defaults.register(defaults: [
-            Key.showUnusableModes: true,
+            Key.showUnusableModes: false,
             Key.hiDPIOnly: true,
             Key.permanentChanges: false,
             Key.rememberPerDisplay: true,
             Key.restoreOnWake: true,
-            Key.confirmModeChanges: true,
             Key.enableOptionalModule: true,
         ])
     }
@@ -65,7 +62,12 @@ public final class Preferences {
 
     // MARK: - Toggles
 
-    /// List modes macOS hides from System Settings. On by default — it is the point of the app.
+    /// List modes macOS hides from System Settings — the ones it marks as unfit
+    /// for the desktop GUI.
+    ///
+    /// Off by default: the menu opens clean, with only the modes that are safe to
+    /// pick. Turning it on adds the rest, which is RDM's signature feature but is
+    /// also the thing that can leave a screen black.
     public var showUnusableModes: Bool {
         get { defaults.bool(forKey: Key.showUnusableModes) }
         set { defaults.set(newValue, forKey: Key.showUnusableModes); changed() }
@@ -97,14 +99,6 @@ public final class Preferences {
         set { defaults.set(newValue, forKey: Key.restoreOnWake); changed() }
     }
 
-    /// Ask for confirmation after a mode change and roll back if the user does
-    /// not answer. On by default — a mode the panel cannot show leaves a black
-    /// screen with no way back.
-    public var confirmModeChanges: Bool {
-        get { defaults.bool(forKey: Key.confirmModeChanges) }
-        set { defaults.set(newValue, forKey: Key.confirmModeChanges); changed() }
-    }
-
     /// Gates rotation and brightness, the two features that need private interfaces.
     public var enableOptionalModule: Bool {
         get { defaults.bool(forKey: Key.enableOptionalModule) }
@@ -131,24 +125,6 @@ public final class Preferences {
         }
     }
 
-    // MARK: - Hotkeys
-
-    /// Shortcut map keyed by a stable action identifier.
-    public var hotkeys: [String: HotKeySpec] {
-        get { decode([String: HotKeySpec].self, key: Key.hotkeys) ?? [:] }
-        set { encode(newValue, key: Key.hotkeys); changed() }
-    }
-
-    public func hotkey(for action: String) -> HotKeySpec? {
-        hotkeys[action]
-    }
-
-    public func setHotkey(_ spec: HotKeySpec?, for action: String) {
-        var current = hotkeys
-        if let spec, spec.isValid { current[action] = spec } else { current.removeValue(forKey: action) }
-        hotkeys = current
-    }
-
     // MARK: - Remembered modes
 
     /// Remembered resolutions keyed by `DisplayIdentity.key`.
@@ -161,16 +137,6 @@ public final class Preferences {
         var current = rememberedModes
         current[identityKey] = mode
         rememberedModes = current
-    }
-
-    public func forgetMode(for identityKey: String) {
-        var current = rememberedModes
-        current.removeValue(forKey: identityKey)
-        rememberedModes = current
-    }
-
-    public func forgetAllModes() {
-        rememberedModes = [:]
     }
 
     // MARK: - Codable helpers

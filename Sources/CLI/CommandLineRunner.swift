@@ -1,5 +1,4 @@
 import CoreGraphics
-import Darwin
 import Foundation
 
 /// Command-line interface.
@@ -26,7 +25,6 @@ public enum CommandLineRunner {
         var hiDPIOnly = false
         var json = false
         var permanent = false
-        var noConfirm = false
 
         var showHelp = false
         var showVersion = false
@@ -133,8 +131,6 @@ public enum CommandLineRunner {
                 options.json = true
             case "--permanent":
                 options.permanent = true
-            case "-y", "--no-confirm":
-                options.noConfirm = true
 
             case "-w", "--width":
                 options.width = try intValue(argument)
@@ -282,11 +278,6 @@ public enum CommandLineRunner {
 
         // Resolution first, so a rotation request lands on the final geometry.
         if options.width != nil || options.height != nil || options.scale != nil || options.refresh != nil {
-            // Snapshot first: if the new mode turns the screen black there is no
-            // menu bar to undo it from, and this process is the only thing that
-            // still knows what the display used to be set to.
-            let before = guardEnabled(options) ? ModeChangeGuard.shared.snapshotBefore() : nil
-
             let result = ModeController.applyResolution(on: display.id,
                                                         width: options.width,
                                                         height: options.height,
@@ -300,19 +291,6 @@ public enum CommandLineRunner {
                 print("\(display.name): now \(mode.pointDescription)\(mode.isHiDPI ? " ⚡️" : "")"
                       + (mode.refreshRate > 0 ? String(format: " @ %.0f Hz", mode.refreshRate) : ""))
                 print("    pixels \(mode.pixelDescription), scale \(String(format: "%.2f", mode.scale))")
-
-                // Only modes macOS itself flags as unusable get a prompt. Guarding
-                // every change would make the tool block for 15 s inside scripts,
-                // and a guard that fires too often is one people switch off.
-                if let before, !mode.isUsable {
-                    if ModeChangeGuard.shared.confirm(description: mode.menuTitle) {
-                        print("    kept")
-                    } else {
-                        ModeChangeGuard.shared.rollback(to: before, permanently: options.permanent)
-                        writeError(L10n.t("cli.reverted"))
-                        exitCode = 3
-                    }
-                }
             case .failure(let error):
                 writeError(error.description)
                 exitCode = 1
@@ -335,19 +313,6 @@ public enum CommandLineRunner {
         }
 
         return exitCode
-    }
-
-    /// Whether the command line should offer the same rollback the menu does.
-    ///
-    /// Three conditions, all of them "the user is actually there to answer":
-    /// they did not opt out, the safety net is switched on, and standard input is
-    /// a terminal. A pipe or a CI runner has nobody to press the button, so
-    /// blocking there would turn a script into a 15-second stall and then revert
-    /// a change the script explicitly asked for.
-    private static func guardEnabled(_ options: Options) -> Bool {
-        !options.noConfirm
-            && Preferences.shared.confirmModeChanges
-            && isatty(STDIN_FILENO) == 1
     }
 
     // MARK: - JSON

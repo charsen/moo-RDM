@@ -162,7 +162,38 @@ public enum DisplayManager {
             if !includeUnusable && !mode.isUsable { continue }
             modes.append(mode)
         }
+        modes.append(contentsOf: hiddenModes(for: displayID, known: modes))
         return modes
+    }
+
+    /// HiDPI modes the window server holds but never returns publicly.
+    ///
+    /// These are the supersampled "more space" modes: a 1920 × 1200 mode on a
+    /// 2560 × 1600 panel, rendered at 3840 × 2400 and scaled down. Only the
+    /// private table exposes them, and they can only be applied by ID — see
+    /// `PrivateModeTable`. Empty when the optional module is off.
+    private static func hiddenModes(for displayID: CGDirectDisplayID,
+                                    known publicModes: [DisplayMode]) -> [DisplayMode] {
+        let knownIDs = Set(publicModes.map(\.modeID))
+        let fallbackRefresh = currentMode(for: displayID)?.refreshRate ?? 0
+
+        return PrivateModeTable.modes(for: displayID)
+            .filter { $0.scale >= 1.5 && !knownIDs.contains($0.modeID) }
+            .map { entry in
+                // The private record's refresh-rate field is stale, so borrow the
+                // rate from the public mode with the same point size when there is
+                // one — a 1920 × 1200 HiDPI mode runs at whatever 1920 × 1200 runs at.
+                let refresh = publicModes.first {
+                    $0.width == entry.width && $0.height == entry.height && $0.refreshRate > 0
+                }?.refreshRate ?? fallbackRefresh
+                return DisplayMode(displayID: displayID,
+                                   privateModeID: entry.modeID,
+                                   width: entry.width,
+                                   height: entry.height,
+                                   scale: entry.scale,
+                                   refreshRate: refresh,
+                                   ioFlags: entry.ioFlags)
+            }
     }
 
     /// The mode the display is using right now.
@@ -192,7 +223,10 @@ public enum DisplayManager {
     /// The reliable signal is `kDisplayModeNativeFlag`, which macOS sets on the
     /// modes that map 1:1 onto the panel.
     public static func nativePixelSize(for displayID: CGDirectDisplayID) -> PixelSize? {
-        let modes = allModes(for: displayID)
+        // Private modes are excluded on purpose: their backing stores are larger
+        // than the panel, so the "largest pixel size" fallback would report a
+        // supersampled size as native.
+        let modes = allModes(for: displayID).filter { !$0.isPrivate }
         let flagged = modes.filter { $0.flags.contains(.native) }
         let candidates = flagged.isEmpty ? modes : flagged
         guard let best = candidates.max(by: {

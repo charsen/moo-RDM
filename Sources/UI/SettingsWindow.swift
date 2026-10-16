@@ -13,8 +13,8 @@ final class SettingsWindowController: NSWindowController {
 
     private let content: SettingsViewController
 
-    init(onHotKeysChanged: @escaping () -> Void) {
-        content = SettingsViewController(onHotKeysChanged: onHotKeysChanged)
+    init() {
+        content = SettingsViewController()
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 500),
                               styleMask: [.titled, .closable, .miniaturizable],
                               backing: .buffered,
@@ -33,11 +33,9 @@ final class SettingsWindowController: NSWindowController {
 
 final class SettingsViewController: NSViewController {
 
-    private let onHotKeysChanged: () -> Void
     private var tabView: NSTabView!
 
-    init(onHotKeysChanged: @escaping () -> Void) {
-        self.onHotKeysChanged = onHotKeysChanged
+    init() {
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -56,7 +54,6 @@ final class SettingsViewController: NSViewController {
         view.addSubview(tabView)
 
         addTab(L10n.t("settings.general"), generalTab())
-        addTab(L10n.t("settings.hotkeys"), hotkeysTab())
         addTab(L10n.t("settings.advanced"), advancedTab())
         addTab(L10n.t("settings.about"), aboutTab())
     }
@@ -121,44 +118,7 @@ final class SettingsViewController: NSViewController {
                                           on: Preferences.shared.restoreOnWake,
                                           action: #selector(toggleRestoreOnWake(_:))))
 
-        stack.addArrangedSubview(divider())
-
-        stack.addArrangedSubview(checkbox(L10n.t("settings.confirmChanges"),
-                                          on: Preferences.shared.confirmModeChanges,
-                                          action: #selector(toggleConfirmChanges(_:))))
-        addFullWidth(hint(L10n.t("settings.confirmChanges.hint")), to: stack)
-
         return stack
-    }
-
-    // MARK: - Hotkeys
-
-    private func hotkeysTab() -> NSView {
-        let stack = verticalStack()
-        addFullWidth(hint(L10n.t("settings.hotkeyHint")), to: stack)
-        stack.addArrangedSubview(divider())
-
-        for action in HotKeyAction.builtIn {
-            stack.addArrangedSubview(hotkeyRow(action: action, title: HotKeyAction.label(for: action)))
-        }
-
-        return stack
-    }
-
-    private func hotkeyRow(action: String, title: String) -> NSView {
-        let label = NSTextField(labelWithString: title)
-        label.font = .systemFont(ofSize: 12)
-
-        let recorder = HotKeyRecorderButton(spec: Preferences.shared.hotkey(for: action)) { [weak self] spec in
-            Preferences.shared.setHotkey(spec, for: action)
-            self?.onHotKeysChanged()
-        }
-
-        let row = NSStackView(views: [label, NSView(), recorder])
-        row.orientation = .horizontal
-        row.alignment = .centerY
-        row.distribution = .fill
-        return row
     }
 
     // MARK: - Advanced
@@ -182,6 +142,7 @@ final class SettingsViewController: NSViewController {
 
         stack.addArrangedSubview(statusRow(L10n.t("menu.rotation"), rotationStatus()))
         stack.addArrangedSubview(statusRow(L10n.t("menu.brightness"), brightnessStatus()))
+        stack.addArrangedSubview(statusRow(L10n.t("settings.hiddenHiDPI"), hiddenHiDPIStatus()))
 
         stack.addArrangedSubview(divider())
 
@@ -210,6 +171,16 @@ final class SettingsViewController: NSViewController {
             .filter { DisplayBrightnessController.canChangeBrightness(of: $0.id) }
             .count
         return count > 0 ? "available on \(count) display(s)" : "unavailable on this system"
+    }
+
+    private func hiddenHiDPIStatus() -> String {
+        guard PrivateModeTable.isSymbolPresent else { return "unavailable on this system" }
+        guard Preferences.shared.enableOptionalModule else { return "disabled" }
+        let count = DisplayManager.allDisplays()
+            .flatMap { DisplayManager.allModes(for: $0.id) }
+            .filter(\.isPrivate)
+            .count
+        return count > 0 ? "\(count) extra mode(s) offered" : "none offered"
     }
 
     // MARK: - About
@@ -272,10 +243,6 @@ final class SettingsViewController: NSViewController {
 
     @objc private func toggleRestoreOnWake(_ sender: NSButton) {
         Preferences.shared.restoreOnWake = sender.state == .on
-    }
-
-    @objc private func toggleConfirmChanges(_ sender: NSButton) {
-        Preferences.shared.confirmModeChanges = sender.state == .on
     }
 
     @objc private func togglePermanent(_ sender: NSButton) {
@@ -355,72 +322,5 @@ final class SettingsViewController: NSViewController {
         row.orientation = .horizontal
         row.alignment = .centerY
         return row
-    }
-}
-
-// MARK: - Hotkey recorder
-
-/// A button that records the next key combination pressed while active.
-final class HotKeyRecorderButton: NSButton {
-
-    private var spec: HotKeySpec?
-    private let onChange: (HotKeySpec?) -> Void
-    private var monitor: Any?
-
-    init(spec: HotKeySpec?, onChange: @escaping (HotKeySpec?) -> Void) {
-        self.spec = spec
-        self.onChange = onChange
-        super.init(frame: NSRect(x: 0, y: 0, width: 90, height: 24))
-        bezelStyle = .rounded
-        font = .monospacedSystemFont(ofSize: 11, weight: .medium)
-        target = self
-        action = #selector(toggleRecording)
-        updateTitle()
-    }
-
-    required init?(coder: NSCoder) { fatalError("not supported") }
-
-    deinit { stop() }
-
-    @objc private func toggleRecording() {
-        monitor == nil ? start() : stop()
-    }
-
-    private func start() {
-        title = "…"
-        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self else { return event }
-            switch event.keyCode {
-            case 0x35:                        // Esc cancels
-                self.stop()
-            case 0x33, 0x75:                  // Delete clears
-                self.spec = nil
-                self.onChange(nil)
-                self.stop()
-            default:
-                if let captured = HotKeySpec.from(event: event) {
-                    self.spec = captured
-                    self.onChange(captured)
-                    self.stop()
-                }
-            }
-            return nil   // never let the combination reach the app
-        }
-    }
-
-    private func stop() {
-        if let monitor {
-            NSEvent.removeMonitor(monitor)
-            self.monitor = nil
-        }
-        updateTitle()
-    }
-
-    private func updateTitle() {
-        if let spec, !spec.isEmpty {
-            title = spec.display
-        } else {
-            title = "—"
-        }
     }
 }

@@ -1,6 +1,5 @@
 import AppKit
 import CoreGraphics
-import Darwin
 import Foundation
 
 /// Diagnostic mode (`--selftest`).
@@ -104,22 +103,22 @@ enum GUISelfTest {
             emit("    brightness: \(DisplayBrightnessController.canChangeBrightness(of: display.id) ? "available" : "unavailable")")
         }
 
-        // --- mode change guard ---
+        // --- modes ---
         //
-        // The guard is the only thing standing between a user and a black screen,
-        // so its configuration is worth reporting rather than assuming.
+        // Worth reporting rather than assuming: this is how many of the modes the
+        // menu offers are ones macOS itself considers unfit for the desktop GUI.
         emit("")
-        emit("-- mode change guard --")
-        emit("confirm pref : \(Preferences.shared.confirmModeChanges ? "on" : "off")")
-        emit("timeout      : \(Int(ModeChangeGuard.timeout))s")
-        emit("stdin is tty : \(isatty(STDIN_FILENO) == 1)  (CLI prompts only on a terminal)")
-
-        let snapshot = ModeChangeGuard.shared.snapshotBefore()
-        emit("snapshot     : \(snapshot.count) display(s) can be restored")
-
+        emit("-- modes --")
         let everyMode = displays.flatMap { DisplayManager.allModes(for: $0.id, includeUnusable: true) }
         let risky = everyMode.filter { !$0.isUsable }.count
         emit("risky modes  : \(risky) of \(everyMode.count) are flagged not usable for the desktop GUI")
+
+        let hidden = everyMode.filter(\.isPrivate)
+        let module = Preferences.shared.enableOptionalModule ? "on" : "off"
+        emit("hidden HiDPI : \(hidden.count) extra mode(s) from the private table (optional module \(module))")
+        for size in Set(hidden.map { $0.pointDescription }).sorted() {
+            emit("                 \(size)")
+        }
 
         if arguments.contains("--roundtrip") {
             guard roundTrip(emit: emit) else { return 1 }
@@ -131,8 +130,8 @@ enum GUISelfTest {
         return 0
     }
 
-    /// Exercises the guard's rollback for real: change the mode, then put it back
-    /// and check the display actually returned.
+    /// Exercises a real mode change for real: switch away, then switch back and
+    /// check the display actually returned.
     ///
     /// Opt-in (`--selftest --roundtrip`) because it visibly changes the screen for
     /// a moment. It picks the *closest* usable mode rather than an arbitrary one
@@ -140,7 +139,7 @@ enum GUISelfTest {
     /// before returning.
     private static func roundTrip(emit: (String) -> Void) -> Bool {
         emit("")
-        emit("-- guard round trip --")
+        emit("-- mode round trip --")
 
         guard let display = DisplayManager.allDisplays().first,
               let current = display.currentMode else {
@@ -158,7 +157,6 @@ enum GUISelfTest {
             return true
         }
 
-        let before = ModeChangeGuard.shared.snapshotBefore()
         emit("from         : \(current.menuTitle)")
         emit("to           : \(target.menuTitle)")
 
@@ -166,19 +164,21 @@ enum GUISelfTest {
             emit("FAIL: could not apply the test mode")
             return false
         }
-        let applied = DisplayManager.currentMode(for: display.id)
-        emit("applied      : \(applied?.menuTitle ?? "?")")
+        emit("applied      : \(DisplayManager.currentMode(for: display.id)?.menuTitle ?? "?")")
 
-        ModeChangeGuard.shared.rollback(to: before, permanently: false)
-
+        // Put it back by re-applying the mode recorded above.
+        guard case .success = ModeController.apply(current, permanently: false) else {
+            emit("FAIL: could not restore \(current.menuTitle)")
+            return false
+        }
         let restored = DisplayManager.currentMode(for: display.id)
-        emit("rolled back  : \(restored?.menuTitle ?? "?")")
+        emit("restored     : \(restored?.menuTitle ?? "?")")
 
         guard let restored, restored.isSame(as: current) else {
             emit("FAIL: the display did not return to \(current.menuTitle)")
             return false
         }
-        emit("PASS: rollback restored the original mode")
+        emit("PASS: the display returned to its original mode")
         return true
     }
 

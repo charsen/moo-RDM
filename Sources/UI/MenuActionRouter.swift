@@ -32,10 +32,8 @@ final class BrightnessBox: NSObject {
 
 final class DisplayBox: NSObject {
     let displayID: CGDirectDisplayID
-    let identityKey: String
-    init(displayID: CGDirectDisplayID, identityKey: String) {
+    init(displayID: CGDirectDisplayID) {
         self.displayID = displayID
-        self.identityKey = identityKey
     }
 }
 
@@ -83,26 +81,20 @@ final class MenuActionRouter: NSObject {
     @objc func selectMode(_ sender: NSMenuItem) {
         guard let box = sender.representedObject as? ModeBox else { return }
         let mode = box.mode
-        let permanently = Preferences.shared.permanentChanges
 
-        // Picking the mode that is already active must not raise a prompt.
+        // Picking the mode that is already active is a no-op.
         if display(mode.displayID)?.currentMode?.isSame(as: mode) == true { return }
 
-        let kept = ModeChangeGuard.shared.perform(permanently: permanently,
-                                                  description: mode.detailedTitle) {
-            switch ModeController.apply(mode, permanently: permanently) {
-            case .success:
-                return true
-            case .failure(let error):
-                report(error.description)
-                return false
-            }
-        }
-
-        // Only record the mode once the user has confirmed it. Remembering it up
-        // front would make a reverted mode come back on the next reconnect.
-        if kept, let display = display(mode.displayID) {
-            memory.remember(display: display)
+        // Applied straight away — no confirmation panel. The switch is meant to
+        // be immediate: pick a resolution, see the result. Anything that asks a
+        // question first turns a one-click action into a dialog.
+        switch ModeController.apply(mode, permanently: Preferences.shared.permanentChanges) {
+        case .success:
+            // Record the mode only once the change actually took effect, so a
+            // failed switch does not come back on the next reconnect.
+            if let display = display(mode.displayID) { memory.remember(display: display) }
+        case .failure(let error):
+            report(error.description)
         }
         onMenuNeedsRebuild?()
     }
@@ -128,18 +120,12 @@ final class MenuActionRouter: NSObject {
         guard abs(DisplayRotationController.currentRotation(of: box.displayID) - box.degrees) >= 0.5
         else { return }
 
-        let kept = ModeChangeGuard.shared.perform(permanently: Preferences.shared.permanentChanges,
-                                                  description: L10n.t("menu.rotation")) {
-            switch DisplayRotationController.setRotation(box.degrees, on: box.displayID) {
-            case .success:
-                return true
-            case .failure(let error):
-                report(error.description)
-                return false
-            }
+        switch DisplayRotationController.setRotation(box.degrees, on: box.displayID) {
+        case .success:
+            if let display = display(box.displayID) { memory.remember(display: display) }
+        case .failure(let error):
+            report(error.description)
         }
-
-        if kept, let display = display(box.displayID) { memory.remember(display: display) }
         onMenuNeedsRebuild?()
     }
 
@@ -162,26 +148,6 @@ final class MenuActionRouter: NSObject {
 
     @objc func toggleHiDPIOnly(_ sender: NSMenuItem) {
         Preferences.shared.hiDPIOnly.toggle()
-        onMenuNeedsRebuild?()
-    }
-
-    // MARK: - Mode memory
-
-    @objc func rememberCurrentMode(_ sender: NSMenuItem) {
-        guard let box = sender.representedObject as? DisplayBox,
-              let display = display(box.displayID) else { return }
-        memory.remember(display: display)
-        onMenuNeedsRebuild?()
-    }
-
-    @objc func forgetRememberedMode(_ sender: NSMenuItem) {
-        guard let box = sender.representedObject as? DisplayBox else { return }
-        Preferences.shared.forgetMode(for: box.identityKey)
-        onMenuNeedsRebuild?()
-    }
-
-    @objc func restoreRememberedModes(_ sender: NSMenuItem) {
-        memory.restoreRememberedModes()
         onMenuNeedsRebuild?()
     }
 

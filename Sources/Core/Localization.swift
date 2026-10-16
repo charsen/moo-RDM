@@ -74,9 +74,6 @@ public enum L10n {
         "menu.showAllModes": "Show modes macOS hides",
         "menu.showAllModes.hint": "Includes modes not usable for the desktop GUI",
         "menu.hiDPIOnly": "HiDPI modes only",
-        "menu.rememberMode": "Remember this display's mode",
-        "menu.forgetMode": "Forget remembered mode",
-        "menu.restoreRemembered": "Restore remembered modes",
         "menu.preferences": "Preferences…",
         "menu.about": "About RDM-ARM",
         "menu.quit": "Quit RDM-ARM",
@@ -91,7 +88,6 @@ public enum L10n {
 
         "settings.title": "RDM-ARM Preferences",
         "settings.general": "General",
-        "settings.hotkeys": "Shortcuts",
         "settings.advanced": "Advanced",
         "settings.about": "About",
 
@@ -107,12 +103,9 @@ public enum L10n {
         "settings.rememberPerDisplay": "Remember mode per display",
         "settings.rememberPerDisplay.hint": "Restore your chosen resolution when a display is reconnected",
         "settings.restoreOnWake": "Restore modes after wake",
-        "settings.optionalModule": "Enable rotation and brightness",
-        "settings.optionalModule.hint": "Rotation and brightness need private system interfaces. Turn this off to keep the app strictly on public APIs.",
-        "settings.hotkeyHint": "Click a shortcut field and press the key combination you want. Press ⌫ to clear.",
-        "settings.hotkeyNext": "Next resolution",
-        "settings.hotkeyPrevious": "Previous resolution",
-        "settings.hotkeyToggleHiDPI": "Toggle HiDPI mode",
+        "settings.optionalModule": "Enable rotation, brightness and hidden HiDPI",
+        "settings.optionalModule.hint": "These need private system interfaces. Rotation and brightness use them to write; hidden HiDPI lists the supersampled resolutions macOS generates but never exposes. Turn this off to keep the app strictly on public APIs.",
+        "settings.hiddenHiDPI": "Hidden HiDPI modes",
         "settings.diagnostics": "Copy diagnostics",
         "settings.diagnostics.done": "Copied",
 
@@ -121,15 +114,6 @@ public enum L10n {
         "about.license": "Upstream RDM carries no formal licence; this rework is provided as-is.",
         "about.engine": "Display engine: public CoreGraphics API only.",
         "about.repo": "Source code",
-
-        "guard.title": "Keep this setting?",
-        "guard.body": "Switched to %@. If the screen does not look right, do nothing — it reverts automatically in %d seconds.",
-        "guard.seconds": "seconds until revert",
-        "guard.keep": "Keep",
-        "guard.revert": "Revert now",
-        "settings.confirmChanges": "Ask for confirmation after a mode change",
-        "settings.confirmChanges.hint": "A mode the panel cannot display leaves the screen black, with no menu bar to undo it. When on, every change is rolled back automatically unless you confirm it within 15 seconds. Turn off only if you are sure every mode you pick is safe.",
-        "cli.reverted": "Not confirmed — reverted to the previous mode.",
 
         "error.noSuchDisplay": "No display matches index %d",
         "error.noSuchMode": "No mode matches %@",
@@ -160,8 +144,6 @@ public enum L10n {
               --all             Include modes macOS hides from the GUI
               --hidpi           Only consider HiDPI modes
               --json            Machine-readable output
-          -y, --no-confirm      Do not ask before keeping a mode macOS flags as
-                                unusable (implied when output is not a terminal)
           -v, --version         Print version
               --help            Show this help
               --selftest        Run GUI diagnostics (status item + menu) and exit
@@ -196,9 +178,6 @@ public enum L10n {
         "menu.showAllModes": "显示 macOS 隐藏的模式",
         "menu.showAllModes.hint": "包含无法用于桌面 GUI 的模式",
         "menu.hiDPIOnly": "仅显示 HiDPI 模式",
-        "menu.rememberMode": "记住此显示器的模式",
-        "menu.forgetMode": "忘记已记住的模式",
-        "menu.restoreRemembered": "恢复已记住的模式",
         "menu.preferences": "偏好设置…",
         "menu.about": "关于 RDM-ARM",
         "menu.quit": "退出 RDM-ARM",
@@ -213,7 +192,6 @@ public enum L10n {
 
         "settings.title": "RDM-ARM 偏好设置",
         "settings.general": "通用",
-        "settings.hotkeys": "快捷键",
         "settings.advanced": "高级",
         "settings.about": "关于",
 
@@ -229,12 +207,9 @@ public enum L10n {
         "settings.rememberPerDisplay": "按显示器记忆模式",
         "settings.rememberPerDisplay.hint": "显示器重新接入时恢复你选择的分辨率",
         "settings.restoreOnWake": "唤醒后恢复模式",
-        "settings.optionalModule": "启用旋转与亮度",
-        "settings.optionalModule.hint": "旋转与亮度依赖系统私有接口。关闭后应用将严格只使用公开 API。",
-        "settings.hotkeyHint": "点击快捷键输入框，按下你想要的组合键。按 ⌫ 清除。",
-        "settings.hotkeyNext": "下一个分辨率",
-        "settings.hotkeyPrevious": "上一个分辨率",
-        "settings.hotkeyToggleHiDPI": "切换 HiDPI 模式",
+        "settings.optionalModule": "启用旋转、亮度与隐藏 HiDPI",
+        "settings.optionalModule.hint": "这些功能依赖系统私有接口：旋转与亮度用它写入，隐藏 HiDPI 则用来列出 macOS 生成但未公开的超采样分辨率。关闭后应用将严格只使用公开 API。",
+        "settings.hiddenHiDPI": "隐藏 HiDPI 模式",
         "settings.diagnostics": "复制诊断信息",
         "settings.diagnostics.done": "已复制",
 
@@ -243,15 +218,6 @@ public enum L10n {
         "about.license": "上游 RDM 未附正式许可证，本重写版按原样提供。",
         "about.engine": "显示引擎：仅使用公开 CoreGraphics API。",
         "about.repo": "源代码",
-
-        "guard.title": "保持这个设置？",
-        "guard.body": "已切换到 %@。如果画面显示不正常，什么都不用做 —— %d 秒后会自动还原。",
-        "guard.seconds": "秒后自动还原",
-        "guard.keep": "保留",
-        "guard.revert": "立即还原",
-        "settings.confirmChanges": "切换分辨率后要求确认",
-        "settings.confirmChanges.hint": "显示器无法显示的模式会让画面全黑，而菜单栏正好画在这块屏上，届时没有任何办法改回来。开启后，每次切换都会在 15 秒内等你确认，不确认就自动还原。只有在你确信所选的模式都安全时才建议关闭。",
-        "cli.reverted": "未确认 —— 已还原到之前的模式。",
 
         "error.noSuchDisplay": "没有索引为 %d 的显示器",
         "error.noSuchMode": "没有匹配 %@ 的模式",
@@ -282,8 +248,6 @@ public enum L10n {
               --all             包含 macOS 从 GUI 隐藏的模式
               --hidpi           只考虑 HiDPI 模式
               --json            输出机器可读格式
-          -y, --no-confirm      对 macOS 标记为不可用的模式不再询问确认
-                                （输出不是终端时自动跳过确认）
           -v, --version         显示版本
               --help            显示帮助
               --selftest        运行 GUI 自检（菜单栏图标 + 菜单）并退出

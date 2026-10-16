@@ -64,7 +64,11 @@ public struct DisplayMode: Hashable, Identifiable {
 
     public let displayID: CGDirectDisplayID
     /// The underlying CoreGraphics mode, kept alive for `CGConfigureDisplayWithDisplayMode`.
-    public let cgMode: CGDisplayMode
+    ///
+    /// `nil` for modes that exist only in the private table (see `PrivateModeTable`):
+    /// macOS generates them but will not vend a `CGDisplayMode`, so they are applied
+    /// by ID instead.
+    public let cgMode: CGDisplayMode?
 
     /// Logical size in points.
     public let width: Int
@@ -91,6 +95,30 @@ public struct DisplayMode: Hashable, Identifiable {
         self.ioFlags     = cgMode.ioFlags
         self.modeID      = cgMode.ioDisplayModeID
         self.isUsable    = cgMode.isUsableForDesktopGUI()
+    }
+
+    /// Builds a mode that only the private table knows about.
+    ///
+    /// There is no `CGDisplayMode` to read from, so every field is supplied by the
+    /// caller. The private record no longer carries a usable refresh rate, so that
+    /// is passed in too.
+    public init(displayID: CGDirectDisplayID,
+                privateModeID modeID: Int32,
+                width: Int,
+                height: Int,
+                scale: Double,
+                refreshRate: Double,
+                ioFlags: UInt32) {
+        self.displayID   = displayID
+        self.cgMode      = nil
+        self.width       = width
+        self.height      = height
+        self.pixelWidth  = Int((Double(width) * scale).rounded())
+        self.pixelHeight = Int((Double(height) * scale).rounded())
+        self.refreshRate = refreshRate
+        self.ioFlags     = ioFlags
+        self.modeID      = modeID
+        self.isUsable    = true
     }
 
     // MARK: - Identity
@@ -129,6 +157,10 @@ public struct DisplayMode: Hashable, Identifiable {
     /// True when the backing store is larger than the logical size, i.e. a HiDPI mode.
     /// These are the modes RDM exists to unlock — macOS normally hides them.
     public var isHiDPI: Bool { pixelWidth > width && pixelHeight > height }
+
+    /// True when the mode only exists in the private table — the public
+    /// enumeration does not return it, and it has to be applied by ID.
+    public var isPrivate: Bool { cgMode == nil }
 
     /// True when the mode is taller than it is wide (rotated display).
     public var isPortrait: Bool { pixelHeight > pixelWidth }
