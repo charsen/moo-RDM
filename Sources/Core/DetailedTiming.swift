@@ -182,17 +182,28 @@ public struct DetailedTiming: Hashable, Sendable {
         raw[1] = UInt8((units >> 8) & 0xFF)
         raw[2] = UInt8(width & 0xFF)
         raw[3] = UInt8(hBlank & 0xFF)
-        raw[4] = UInt8(((width >> 8) & 0x0F) << 4 | ((hBlank >> 8) & 0x0F))
+        // Bytes 4 and 7 pack a 4-bit high half each; keep the halves as typed
+        // locals rather than one nested expression (see byte 11 below).
+        let widthHigh = UInt8((width >> 8) & 0x0F) << 4
+        let hBlankHigh = UInt8((hBlank >> 8) & 0x0F)
+        raw[4] = widthHigh | hBlankHigh
         raw[5] = UInt8(height & 0xFF)
         raw[6] = UInt8(vBlank & 0xFF)
-        raw[7] = UInt8(((height >> 8) & 0x0F) << 4 | ((vBlank >> 8) & 0x0F))
+        let heightHigh = UInt8((height >> 8) & 0x0F) << 4
+        let vBlankHigh = UInt8((vBlank >> 8) & 0x0F)
+        raw[7] = heightHigh | vBlankHigh
         raw[8] = UInt8(hFront & 0xFF)
         raw[9] = UInt8(hSync & 0xFF)
-        raw[10] = UInt8((vFront & 0x0F) << 4 | (vSync & 0x0F))
-        raw[11] = UInt8(((hFront >> 8) & 0x03) << 6
-                        | ((hSync >> 8) & 0x03) << 4
-                        | ((vFront >> 4) & 0x03) << 2
-                        | ((vSync >> 4) & 0x03))
+        raw[10] = UInt8(vFront & 0x0F) << 4 | UInt8(vSync & 0x0F)
+        // Byte 11 packs the high bits of all four values: 7–6 horizontal front
+        // porch, 5–4 horizontal sync, 3–2 vertical front porch, 1–0 vertical
+        // sync. Kept as separate terms because a single chained expression this
+        // dense times out the type checker on older toolchains (Swift 5.10).
+        let hFrontHigh = UInt8((hFront >> 8) & 0x03) << 6
+        let hSyncHigh = UInt8((hSync >> 8) & 0x03) << 4
+        let vFrontHigh = UInt8((vFront >> 4) & 0x03) << 2
+        let vSyncHigh = UInt8((vSync >> 4) & 0x03)
+        raw[11] = hFrontHigh | hSyncHigh | vFrontHigh | vSyncHigh
         // Image size and borders describe the physical panel; keep them.
         raw[12] = template.raw[12]
         raw[13] = template.raw[13]
