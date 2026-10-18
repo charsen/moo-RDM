@@ -35,6 +35,24 @@ public enum DisplayEDIDReader {
         return blobs.first { candidate.matches($0) } ?? (blobs.count == 1 ? blobs[0] : nil)
     }
 
+    /// Whether anything in the registry publishes a display transport at all.
+    ///
+    /// A missing EDID has two very different causes, and `read(for:)` returning
+    /// `nil` collapses them: a *virtual* screen (VM, headless runner, screen
+    /// sharing) has no port transport in the registry and therefore no EDID to
+    /// read — an environment, not a fault; a real panel whose port exists but
+    /// whose descriptors did not come back is a genuine failure. Callers that
+    /// report results need to tell those apart, so this exposes the registry
+    /// question separately.
+    public static func hasTransportService() -> Bool {
+        for className in transportClassNames {
+            let found = services(named: className)
+            found.forEach { IOObjectRelease($0) }
+            if !found.isEmpty { return true }
+        }
+        return false
+    }
+
     /// Asks the display driver to re-read its descriptors, then reports whether
     /// the mode list actually changed.
     ///

@@ -323,7 +323,18 @@ enum TimingSelfTest {
             return
         }
         guard let edid = DisplayEDIDReader.read(for: displays[displayIndex].id) else {
-            checks.check(false, "EDID readable for display \(displayIndex)")
+            // A virtual screen (VM, headless runner, screen sharing) appears in
+            // the display list but publishes no port transport, so there is no
+            // EDID to read. That is an environment, not a defect — failing here
+            // would make every CI runner red for a reason no code change can fix.
+            // A transport that exists but yields no EDID is the real failure.
+            if !DisplayEDIDReader.hasTransportService() {
+                print("SKIP  no display transport in the I/O registry"
+                      + " — virtual screen, real-EDID checks not run")
+                return
+            }
+            checks.check(false, "EDID readable for display \(displayIndex)",
+                         "transport exists but no EDID came back")
             return
         }
 
