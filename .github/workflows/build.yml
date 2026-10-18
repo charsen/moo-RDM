@@ -64,6 +64,15 @@ jobs:
           test "$SH" = "$SW" || { echo "::error::version drift (AppInfo.swift)"; exit 1; }
           test "$SH" = "$PL" || { echo "::error::version drift (Info.plist)"; exit 1; }
 
+      - name: Timing self-test (headless)
+        run: |
+          # The synthetic half needs no hardware: it builds a stand-in panel and
+          # runs the real audit assembly over it. The panel half prints SKIP here
+          # and exit code 0 — a runner with no display is an environment, not a
+          # defect. This is the only automated check the verdict logic has ever
+          # had; before it, the suite was a manual gate nobody could run in CI.
+          build/RDM-ARM.app/Contents/MacOS/RDM-ARM --selftest-timing
+
       - name: CLI smoke test
         run: |
           set -euo pipefail

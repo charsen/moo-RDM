@@ -372,6 +372,13 @@ public enum CommandLineRunner {
     // MARK: - EDID and hardware limits
 
     private static func dumpEDID(_ options: Options) -> Int32 {
+        // EDID is a byte blob; there is no JSON form of it that would not be a
+        // worse version of the bytes themselves. Saying so beats accepting the
+        // flag and quietly printing the text table anyway.
+        if options.json {
+            writeError(L10n.t("error.jsonUnsupportedEDID"))
+            return 2
+        }
         guard let display = resolveTarget(options) else { return 1 }
         guard let edid = DisplayEDIDReader.read(for: display.id) else {
             writeError(L10n.t("error.timingNoEDID"))
@@ -432,6 +439,11 @@ public enum CommandLineRunner {
         guard let edid = report.edid else {
             writeError(L10n.t("error.timingNoEDID"))
             return 1
+        }
+
+        if options.json {
+            printJSON(capabilitiesDTO(display: display, report: report, edid: edid))
+            return 0
         }
 
         print("Display \(display.ordinal): \(display.name)")
@@ -496,6 +508,15 @@ public enum CommandLineRunner {
 
         let audit = report.audit(target: options.refresh)
         let target = audit.target
+
+        if options.json {
+            printJSON(auditDTO(display: display, report: report, audit: audit,
+                               requested: options.refresh != nil))
+            // Same contract as the text path: an empty table is a failure, but the
+            // JSON stays parseable either way so a script never has to guess what
+            // half-written output means.
+            return audit.geometries.isEmpty ? 1 : 0
+        }
 
         print("Display \(display.ordinal): \(display.name)")
         if options.refresh == nil {
@@ -909,6 +930,273 @@ public enum CommandLineRunner {
             hiDPIModeCount: all.filter(\.isHiDPI).count,
             modes: includeModes ? modes.sortedForMenu().map(modeDTO) : nil
         )
+    }
+
+    // MARK: - Capabilities JSON
+
+    private struct DisplayRefDTO: Codable {
+        let index: Int
+        let id: UInt32
+        let name: String
+    }
+
+    private struct EdidSummaryDTO: Codable {
+        let manufacturer: String
+        let product: UInt32
+        let productName: String?
+        let blocks: Int
+    }
+
+    private struct TimingDTO: Codable {
+        let width: Int
+        let height: Int
+        let refreshRate: Double
+        let pixelClockKHz: Int
+        let hTotal: Int
+        let vTotal: Int
+    }
+
+    private struct LinkDTO: Codable {
+        /// `DisplayHints.MaxTotalPixelRate`. Absent when the panel publishes none.
+        let maxPixelRate: Int?
+        let minRefreshRate: Double?
+        let maxRefreshRate: Double?
+    }
+
+    private struct NativeCeilingDTO: Codable {
+        let width: Int
+        let height: Int
+        let maxRefreshRate: Double
+    }
+
+    private struct HiddenRateDTO: Codable {
+        let width: Int
+        let height: Int
+        let refreshRate: Double
+        /// `detailedTiming` or `ceaShortFormat`.
+        let source: String
+    }
+
+    private struct OverrideDTO: Codable {
+        let installed: Bool
+        /// False on Apple silicon, where macOS ignores the override directory.
+        let writable: Bool
+    }
+
+    private struct CapabilitiesDTO: Codable {
+        let version: String
+        let architecture: String
+        let display: DisplayRefDTO
+        let edid: EdidSummaryDTO
+        let nativeTiming: TimingDTO?
+        /// What the link carries at the native geometry. Absent when the panel
+        /// publishes no budget.
+        let nativeCeiling: NativeCeilingDTO?
+        let link: LinkDTO
+        /// Rates the panel declares that macOS does not list at that geometry.
+        let hiddenRates: [HiddenRateDTO]
+        let override: OverrideDTO
+    }
+
+    private static func capabilitiesDTO(display: DisplayInfo,
+                                        report: DisplayCapabilities.Report,
+                                        edid: EDID) -> CapabilitiesDTO {
+        let native = report.nativeFormat
+            ?? report.nativeTiming.map { PixelSize(width: $0.width, height: $0.height) }
+        let ceiling = native.flatMap { size in
+            report.estimatedMaximumRefresh(width: size.width, height: size.height)
+                .map { NativeCeilingDTO(width: size.width, height: size.height, maxRefreshRate: $0) }
+        }
+
+        return CapabilitiesDTO(
+            version: AppInfo.version,
+            architecture: AppInfo.architecture,
+            display: DisplayRefDTO(index: display.ordinal, id: display.id, name: display.name),
+            edid: EdidSummaryDTO(manufacturer: edid.manufacturerCode,
+                                 product: edid.product,
+                                 productName: edid.productName,
+                                 blocks: edid.blockCount),
+            nativeTiming: report.nativeTiming.map {
+                TimingDTO(width: $0.width, height: $0.height, refreshRate: $0.refreshRate,
+                          pixelClockKHz: $0.pixelClockKHz, hTotal: $0.hTotal, vTotal: $0.vTotal)
+            },
+            nativeCeiling: ceiling,
+            link: LinkDTO(maxPixelRate: report.linkMaxPixelRate,
+                          minRefreshRate: report.minRefreshRate,
+                          maxRefreshRate: report.maxRefreshRate),
+            hiddenRates: report.hiddenRates.map {
+                HiddenRateDTO(width: $0.width, height: $0.height,
+                              refreshRate: $0.refreshRate, source: $0.source.rawValue)
+            },
+            override: OverrideDTO(installed: DisplayOverrideInstaller.hasOverride(for: edid),
+                                  writable: DisplayOverrideInstaller.support.isAvailable))
+    }
+
+    // MARK: - Audit JSON
+
+    private struct AuditDisplayDTO: Codable {
+        let index: Int
+        let id: UInt32
+        let name: String
+        let current: ModeDTO?
+    }
+
+    private struct AuditBudgetDTO: Codable {
+        let linkMaxPixelRate: Int?
+        let minRefreshRate: Double?
+        let maxRefreshRate: Double?
+    }
+
+    private struct AuditPointDTO: Codable {
+        let width: Int
+        let height: Int
+        let scale: Double
+    }
+
+    private struct AuditGeometryDTO: Codable {
+        let width: Int
+        let height: Int
+        let pointSizes: [AuditPointDTO]
+        let offeredRates: [Double]
+        let declaredRates: [Double]
+        let ceiling: Double?
+        let verdict: String
+    }
+
+    private struct AuditRecommendationDTO: Codable {
+        /// `available-now`, `mode-switch` or `custom-timing`.
+        let kind: String
+        /// The pixel geometry the recommendation refers to — a row of `geometries`.
+        let width: Int
+        let height: Int
+        /// For `mode-switch`: the point size to select, which is not the pixel row.
+        let pointWidth: Int?
+        let pointHeight: Int?
+        /// The exact command, `nil` when the rate is already there.
+        let command: String?
+        /// True when the command only computes. On Apple silicon the override it
+        /// would install is never read, so following it changes nothing.
+        let computesOnly: Bool
+    }
+
+    private struct AuditBestCaseDTO: Codable {
+        let width: Int
+        let height: Int
+        let ceiling: Double
+    }
+
+    private struct AuditDTO: Codable {
+        let version: String
+        let architecture: String
+        let display: AuditDisplayDTO
+        let target: Double
+        /// `requested` for an explicit `-r`, `declared-max` for the default.
+        let targetSource: String
+        let budget: AuditBudgetDTO
+        /// The winning row's verdict, `unreachable` when the link tops out, or
+        /// `unknown` when no row published a budget to compare against.
+        let verdict: String
+        let recommendation: AuditRecommendationDTO?
+        let bestCase: AuditBestCaseDTO?
+        let geometries: [AuditGeometryDTO]
+    }
+
+    /// The same audit the table prints, in a shape a script can act on.
+    ///
+    /// Nothing is truncated: the text output shows eight rows because a terminal
+    /// stops being readable after that, which is a display constraint and not a
+    /// data one.
+    private static func auditDTO(display: DisplayInfo,
+                                 report: DisplayCapabilities.Report,
+                                 audit: DisplayCapabilities.RefreshAudit,
+                                 requested: Bool) -> AuditDTO {
+        let target = audit.target
+
+        let geometries = audit.geometries.map { geometry in
+            AuditGeometryDTO(
+                width: geometry.width,
+                height: geometry.height,
+                pointSizes: geometry.pointSizes.map {
+                    AuditPointDTO(width: $0.width, height: $0.height, scale: $0.scale)
+                },
+                offeredRates: geometry.offeredRates,
+                declaredRates: geometry.declaredRates,
+                ceiling: geometry.ceiling,
+                verdict: geometry.verdict(for: target).rawValue)
+        }
+
+        // Same precedence as the text output: an already-offered geometry wins
+        // over anything that would need work, because it is the answer to the
+        // question that was asked.
+        let ready = audit.offeredAtAnyGeometry
+        let best = audit.recommendedGeometry
+
+        let verdict: String
+        if ready != nil {
+            verdict = DisplayCapabilities.RefreshAudit.Verdict.offered.rawValue
+        } else if let best {
+            verdict = best.verdict(for: target).rawValue
+        } else {
+            verdict = audit.isUndetermined ? "unknown" : "unreachable"
+        }
+
+        var recommendation: AuditRecommendationDTO?
+        var bestCase: AuditBestCaseDTO?
+
+        if let ready {
+            recommendation = AuditRecommendationDTO(
+                kind: "available-now", width: ready.width, height: ready.height,
+                pointWidth: ready.pointSizes.first?.width,
+                pointHeight: ready.pointSizes.first?.height,
+                command: nil, computesOnly: false)
+        } else if let best {
+            switch best.verdict(for: target) {
+            case .hidden:
+                let point = best.pointSizes.first
+                recommendation = AuditRecommendationDTO(
+                    kind: "mode-switch", width: best.width, height: best.height,
+                    pointWidth: point?.width, pointHeight: point?.height,
+                    command: point.map {
+                        "rdm-arm -w \($0.width) -h \($0.height)"
+                            + " -r \(rateText(target)) -d \(display.ordinal)"
+                    },
+                    computesOnly: false)
+            case .synthesizable:
+                recommendation = AuditRecommendationDTO(
+                    kind: "custom-timing", width: best.width, height: best.height,
+                    pointWidth: nil, pointHeight: nil,
+                    command: "rdm-arm --custom-timing "
+                        + "\(best.width)x\(best.height)@\(rateText(target)) -d \(display.ordinal)",
+                    computesOnly: !DisplayOverrideInstaller.support.isAvailable)
+            case .offered, .beyondLink, .unknown:
+                break
+            }
+        } else if !audit.isUndetermined {
+            let ceilings = audit.geometries.compactMap { geometry in
+                geometry.ceiling.map { (geometry: geometry, ceiling: $0) }
+            }
+            if let closest = ceilings.max(by: { $0.ceiling < $1.ceiling }) {
+                bestCase = AuditBestCaseDTO(width: closest.geometry.width,
+                                            height: closest.geometry.height,
+                                            ceiling: closest.ceiling)
+            }
+        }
+
+        return AuditDTO(
+            version: AppInfo.version,
+            architecture: AppInfo.architecture,
+            display: AuditDisplayDTO(index: display.ordinal, id: display.id,
+                                     name: display.name,
+                                     current: display.currentMode.map(modeDTO)),
+            target: target,
+            targetSource: requested ? "requested" : "declared-max",
+            budget: AuditBudgetDTO(linkMaxPixelRate: report.linkMaxPixelRate,
+                                   minRefreshRate: report.minRefreshRate,
+                                   maxRefreshRate: report.maxRefreshRate),
+            verdict: verdict,
+            recommendation: recommendation,
+            bestCase: bestCase,
+            geometries: geometries)
     }
 
     private static func printJSON<T: Encodable>(_ value: T) {

@@ -149,18 +149,48 @@ Display 0: BenQ PD2705U
 指定一个够不着的档位，结论会直接点出卡在哪一层：
 
 ```
-$ rdm-arm --refresh-audit -r 75
+$ rdm-arm --refresh-audit -r 74
     verdict        within the link budget at 1920 × 1080, but the panel never declared it
-                   rdm-arm --custom-timing 1920x1080@75 -d 0
+                   rdm-arm --custom-timing 1920x1080@74 -d 0
                    (computes only — Apple silicon ignores the override)
-                   already offered at 640 × 480
 
 $ rdm-arm --refresh-audit -r 120
     verdict        no geometry reaches 120 Hz — the link tops out below it
                    best case 1920 × 1080 at about 76 Hz
 ```
 
-最后那行 `already offered at 640 × 480` 值得单独说：**「最大能到多高的分辨率」和「现在哪个档位已经能用」是两个问题**。75 Hz 在 1080p 上得合成时序（Apple 芯片还合成不了），而 640 × 480 早就列在系统列表里——只报前者，等于让人白折腾一圈去要管理员密码。
+**结论行永远先给「不用折腾」的那条。** 同一台机器 `-r 75` 的回答是：
+
+```
+    verdict        available now at 2048 × 1536
+```
+
+而不是「1920 × 1080 得合成时序」。因为 2048 × 1536（菜单里显示为 `1024 × 768 ⚡️`）本来就带着 75 Hz，只是不点 HiDPI 的人碰不到它。表格是按「面板支持程度」排的（原生 → 面板声明 → 面积），不是按尺寸，所以最省事的那行完全可能排在中段——结论行必须自己在「已经可用」的那些行里挑面积最大的，而不是拿表格第一行。
+
+`--json` 给的是同一份结论，只是写给脚本看：
+
+```json
+{
+  "target": 75,
+  "targetSource": "requested",
+  "verdict": "offered",
+  "recommendation": {
+    "kind": "available-now",
+    "width": 2048, "height": 1536,
+    "pointWidth": 1024, "pointHeight": 768
+  },
+  "budget": { "linkMaxPixelRate": 594000000, "minRefreshRate": 50, "maxRefreshRate": 76 }
+}
+```
+
+（上面省略了 `version` / `architecture` / `display` 和完整的 `geometries` 数组；每行是 `width` / `height` / `pointSizes` / `offeredRates` / `declaredRates` / `ceiling` / `verdict`。）
+
+字段口径：`verdict` ∈ `offered` / `hidden` / `synthesizable` / `unreachable` / `unknown`；`recommendation.kind` ∈ `available-now` / `mode-switch` / `custom-timing`（后两者带 `command`）；`computesOnly: true` 表示这条命令只算不写（Apple 芯片），脚本可以据此跳过。`geometries` 不截断——文本只印 8 行是终端可读性限制，不是数据限制。不适用于当前情形的键直接省略，不出现 `null`。
+
+`--capabilities` 有同样的一份：`display` / `edid` / `nativeTiming` / `nativeCeiling` / `link` / `hiddenRates` / `override`（`installed` + `writable`，后者在 Apple 芯片上是 `false`）。`--edid` 则**没有** JSON 形式——EDID 本身是二进制，硬套 JSON 只是把 256 个字节写得更难用；带 `--json` 会直接报错并指向 `--emit-edid`，而不是假装接受然后照常打印文本表。
+
+`unknown` 和 `unreachable` 是两件事，代码里分开：前者是**没量到**（面板不公布链路预算，一行都判不了），后者是**量到了，确实不够**。把前者说成「链路只到这儿」等于替面板编了一个它没给的数字。
+
 
 顺带解释一个几乎人人踩过的坑：**「我把分辨率调到 1080p 了，怎么还是 30 Hz」**。因为 HiDPI 的 `pixelWidth` 是显存里的 backing store，不是输出时序——1920 × 1080 的 HiDPI 模式实际是按 3840 × 2160 在输出，带宽也按 4K 算。审计表里每个分辨率下面那行 `HiDPI … — all drive this timing` 就是在说这件事：点尺寸换了，时序没换。
 
@@ -221,13 +251,17 @@ rdm-arm -w 2304 -h 1296 -s 2 -r 60 # 指定刷新率
 rdm-arm --rotation 90              # 旋转 90°
 rdm-arm --edid                     # 面板自己声明的时序、带宽、刷新范围
 rdm-arm --capabilities             # 隐藏档位 + 硬件天花板
+rdm-arm --capabilities --json | jq .nativeCeiling   # 同上，机器可读
 rdm-arm --refresh-audit            # 某个刷新率为什么拿不到，逐分辨率说明
 rdm-arm --refresh-audit -r 75      # 指定目标刷新率
+rdm-arm --refresh-audit -r 75 --json | jq .verdict   # 同一份结论，机器可读
 rdm-arm --custom-timing 3840x2160@65 --write   # 合成 4K@65 并试写，20 秒自动回滚
-rdm-arm --selftest-timing          # EDID/时序纯逻辑自检，不碰系统
+rdm-arm --selftest-timing          # EDID/时序纯逻辑自检，不碰系统，无显示器也能跑
 rdm-arm --selftest                 # GUI 自检：菜单栏图标位置 + 菜单结构
 rdm-arm --selftest --roundtrip     # 自检并真实跑一遍「切换 → 还原」
 ```
+
+`--selftest-timing` 分成两半：合成出来的替身面板（4K60 首选 + 1080p@75 次要描述符）走完 EDID 编解码、重定时、打补丁、以及**整条审计装配链**，这部分不需要任何硬件，CI 的无显示器 runner 上照样跑；真机那半（读 IOKit EDID、查 CEA 短格式、和实时模式表比对）只在接了显示器时执行，没有显示器就报 `SKIP` 而不是 `FAIL`——没有显示器是环境，不是缺陷，但接了显示器却读不到 EDID 仍然是失败。
 
 `--selftest` 值得单独说一句：菜单栏图标是否真的显示出来，**无法从进程外部验证**——`CGWindowListCopyWindowInfo` 不枚举菜单栏项，截屏又需要录屏权限。所以自检从进程内部报告窗口服务器实际把图标放在了哪里，是唯一可靠的办法。加上 `--roundtrip` 后会真的切换一次分辨率再还原，用来验证「切换 → 还原」这条链路确实通。
 
@@ -306,7 +340,9 @@ CI（`.github/workflows/build.yml`）在干净的 macOS runner 上验证通用�
 
 override 能不能用，按**硬件**判定（`sysctlbyname("hw.optional.arm64")`），不是编译期 `#if arch(arm64)`：universal 包的 x86_64 slice 在 Apple 芯片上经 Rosetta 运行时，编译期判断会以为自己在 Intel 上，进而放开一条写了也不被读取的路径——那一步会先要管理员密码。硬件属性从哪个 slice 读都一样。
 
-**关于审计的可信度**：判定逻辑有 12 条断言覆盖（`--selftest-timing` 现在共 30 条全 PASS）。四种成因各钉一条——因为它们的修法完全不同，"看起来合理"是不够的；4 条钉住「最大可达几何」与「已经可用的几何」必须是两个独立答案；1 条钉住 59.94 与 60 必须算同一个答案。每条都做过 mutation 验证（把实现改坏，确认对应断言真的会 FAIL）。
+**关于审计的可信度**：判定逻辑有 25 条断言覆盖（`--selftest-timing` 现在共 45 条：41 条合成、4 条真机）。四种成因各钉一条——因为它们的修法完全不同，"看起来合理"是不够的；其中 10 条走的是**整条审计装配链**（合成 EDID → 模式表 → 按输出几何分组 → 排序 → 判定），不是单独调 `verdict()`，所以分组和排序也会被咬住。另有断言钉住：59.94 与 60 必须算同一个答案、`unknown` 不许冒充 `unreachable`、「已经可用」必须取面积最大的那行而不是表格第一行。关键几条都做过 mutation 验证（把实现改坏，确认对应断言真的 FAIL）。
+
+说清楚这块还差什么：`hidden` 分支现在有合成样本，但**没有真机样本**——本机这块面板的 EDID 声明被 macOS 全部列了出来，造不出「声明了但系统没列」的现场。要真验这条，得换一台 Intel 机器走一次 override 路线。
 
 **关于旋转**：`SLSSetDisplayRotation` 是私有符号，但它是**运行时动态解析**的，签名经实测确认为 `SLSSetDisplayRotation(CGDirectDisplayID, uint32_t)`（两参数形式返回成功，三参数形式返回失败）。如果将来这个符号消失，旋转菜单会**自动隐藏**，其余功能不受影响——不会崩溃。
 

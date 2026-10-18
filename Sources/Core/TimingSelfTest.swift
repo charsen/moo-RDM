@@ -7,21 +7,39 @@ import Foundation
 /// The point is to pin the parts that are easy to get subtly wrong — descriptor
 /// field packing, checksum repair, and the promise that re-clocking changes the
 /// pixel clock and *nothing else*.
+///
+/// The suite is in two halves on purpose:
+///
+/// - **Synthetic** runs everywhere, including a headless CI runner with no
+///   display attached. It builds a stand-in panel and pushes it through the real
+///   `audit()` assembly, so the verdict logic cannot rot between releases just
+///   because nobody happened to open a terminal and run this by hand.
+/// - **Real panel** runs only when one is attached, and reports `SKIP` otherwise.
+///   A missing display is a legitimate environment, not a defect — but a display
+///   that is present and unreadable still fails, because that would mean the IOKit
+///   path broke.
 enum TimingSelfTest {
 
-    static func run(displayIndex: Int = 0) -> Int32 {
-        let displays = DisplayManager.allDisplays()
-        guard displayIndex >= 0, displayIndex < displays.count else {
-            print("FAIL  no display at index \(displayIndex)")
-            return 1
-        }
-        guard let edid = DisplayEDIDReader.read(for: displays[displayIndex].id) else {
-            print("FAIL  no EDID for display \(displayIndex)")
-            return 1
-        }
+    // MARK: - Entry point
 
+    static func run(displayIndex: Int = 0) -> Int32 {
+        var checks = Checks()
+
+        syntheticChecks(&checks)
+        realPanelChecks(&checks, displayIndex: displayIndex)
+
+        print(checks.failures == 0
+              ? "\nall checks passed"
+              : "\n\(checks.failures) check(s) failed")
+        return checks.failures == 0 ? 0 : 1
+    }
+
+    /// Accumulates failures so one wrong answer does not hide the next.
+    private struct Checks {
         var failures = 0
-        func check(_ condition: Bool, _ label: String, _ detail: @autoclosure () -> String = "") {
+
+        mutating func check(_ condition: Bool, _ label: String,
+                            _ detail: @autoclosure () -> String = "") {
             if condition {
                 print("PASS  \(label)")
             } else {
@@ -30,21 +48,104 @@ enum TimingSelfTest {
                 print("FAIL  \(label)\(extra.isEmpty ? "" : " — \(extra)")")
             }
         }
+    }
 
-        print("EDID     \(edid.manufacturerCode) 0x\(String(format: "%04X", edid.product))"
+    // MARK: - Synthetic
+
+    /// The 18-byte descriptor documented in `DetailedTiming`'s header comment.
+    ///
+    /// Taken from a real panel (BenQ PD2705U: 3840 × 2160, 533.25 MHz,
+    /// 4000 × 2222 totals) rather than encoded here by hand. A fixture built with
+    /// the same code it is meant to test can be wrong in a way that cancels out;
+    /// a byte string lifted from hardware cannot.
+    static let fixtureDescriptor: [UInt8] = [
+        0x4D, 0xD0, 0x00, 0xA0, 0xF0, 0x70, 0x3E, 0x80, 0x30,
+        0x20, 0x35, 0x00, 0x55, 0x50, 0x21, 0x00, 0x00, 0x1A,
+    ]
+
+    /// A stand-in panel: 4K60 preferred, plus 1920 × 1080 @ 75 as a second timing.
+    ///
+    /// This is not a real blob. Header, descriptor, name and checksum are
+    /// genuine; chromaticity, established and standard timings are left at zero
+    /// because nothing in this project reads them, and filling them in would only
+    /// suggest they had been verified.
+    static func fixtureEDID() -> EDID? {
+        guard let preferred = DetailedTiming(raw: fixtureDescriptor) else { return nil }
+
+        var bytes = [UInt8](repeating: 0, count: EDID.blockSize)
+        for index in 1...6 { bytes[index] = 0xFF }   // header magic, byte 0 already 0
+        // Manufacturer "TST", product 0x1234, week 0, year 2020.
+        bytes[8] = 0x52
+        bytes[9] = 0x74
+        bytes[10] = 0x34
+        bytes[11] = 0x12
+        bytes[17] = 30
+        // EDID 1.3, digital input, 52 × 29 cm, gamma 2.2, sRGB-ish feature bits.
+        bytes[18] = 1
+        bytes[19] = 3
+        bytes[20] = 0x80
+        bytes[21] = 0x34
+        bytes[22] = 0x1D
+        bytes[23] = 0x78
+        bytes[24] = 0x0F
+        // Standard timings: 0x01 0x01 means "unused".
+        for index in stride(from: 38, to: 54, by: 2) { bytes[index] = 0x01 }
+
+        bytes.replaceSubrange(54..<72, with: preferred.raw)
+        bytes[93] = 0xFC                                 // 0xFC = product name
+        let name = Array("FIXTURE".utf8)
+        bytes.replaceSubrange(95..<(95 + name.count), with: name)
+        bytes[95 + name.count] = 0x0A
+        bytes[127] = EDID.checksum(of: bytes, block: 0)
+
+        // `adding` writes to the first blank slot, which is offset 108 here — so
+        // the preferred descriptor stays where it is and 1080p becomes a
+        // non-preferred timing the way a real panel would carry it.
+        guard let base = EDID(bytes: bytes),
+              let extra = preferred.scaled(toWidth: 1920, toHeight: 1080, refresh: 75)
+        else { return nil }
+        return base.adding(extra)
+    }
+
+    /// A mode list shaped like a real 4K panel's: the native timing, one HiDPI
+    /// point size that drives it, and a plain 1080p mode.
+    static func fixtureReport(_ edid: EDID) -> DisplayCapabilities.Report {
+        let modes = [
+            DisplayMode(displayID: 1, privateModeID: 11, width: 3840, height: 2160,
+                        scale: 1, refreshRate: 60, ioFlags: 0),
+            DisplayMode(displayID: 1, privateModeID: 12, width: 1920, height: 1080,
+                        scale: 2, refreshRate: 60, ioFlags: 0),
+            DisplayMode(displayID: 1, privateModeID: 13, width: 1920, height: 1080,
+                        scale: 1, refreshRate: 60, ioFlags: 0),
+        ]
+        return DisplayCapabilities.Report(
+            displayID: 1,
+            edid: edid,
+            nativeTiming: edid.preferredTiming,
+            hiddenRates: [],
+            linkMaxPixelRate: 594_000_000,
+            maxRefreshRate: 76,
+            minRefreshRate: 50,
+            nativeFormat: PixelSize(width: 3840, height: 2160),
+            offeredModes: modes)
+    }
+
+    private static func syntheticChecks(_ checks: inout Checks) {
+        guard let edid = fixtureEDID(), let preferred = edid.preferredTiming else {
+            checks.check(false, "fixture EDID builds")
+            return
+        }
+        print("FIXTURE  \(edid.manufacturerCode) 0x\(String(format: "%04X", edid.product))"
               + "  \(edid.productName ?? "unnamed")  blocks=\(edid.blockCount)")
 
         // 1. The preferred descriptor must decode to something a panel could use.
-        guard let preferred = edid.preferredTiming else {
-            print("FAIL  no preferred timing")
-            return 1
-        }
-        check(preferred.width > 0 && preferred.height > 0, "preferred timing decodes",
-              preferred.description)
-        check(preferred.refreshRate > 20 && preferred.refreshRate < 300,
-              "preferred refresh is plausible", String(format: "%.3f Hz", preferred.refreshRate))
-        check(preferred.hTotal > preferred.hActive && preferred.vTotal > preferred.vActive,
-              "blanking present", "totals \(preferred.hTotal) × \(preferred.vTotal)")
+        checks.check(preferred.width > 0 && preferred.height > 0, "preferred timing decodes",
+                     preferred.description)
+        checks.check(preferred.refreshRate > 20 && preferred.refreshRate < 300,
+                     "preferred refresh is plausible",
+                     String(format: "%.3f Hz", preferred.refreshRate))
+        checks.check(preferred.hTotal > preferred.hActive && preferred.vTotal > preferred.vActive,
+                     "blanking present", "totals \(preferred.hTotal) × \(preferred.vTotal)")
 
         // 2. Re-clocking must change bytes 0 and 1 only. Anything else and the
         //    descriptor's sync structure was silently rewritten.
@@ -53,29 +154,30 @@ enum TimingSelfTest {
             let changed = zip(preferred.raw, retimed.raw).enumerated()
                 .filter { $0.element.0 != $0.element.1 }
                 .map(\.offset)
-            check(changed == [0, 1], "re-clock touches only the pixel clock",
-                  "changed offsets \(changed)")
-            check(abs(retimed.refreshRate - target) < 0.05,
-                  "re-clocked rate is within 0.05 Hz of the request",
-                  String(format: "asked %.3f, got %.3f", target, retimed.refreshRate))
-            check(retimed.hTotal == preferred.hTotal && retimed.vTotal == preferred.vTotal,
-                  "re-clock keeps totals")
+            checks.check(changed == [0, 1], "re-clock touches only the pixel clock",
+                         "changed offsets \(changed)")
+            checks.check(abs(retimed.refreshRate - target) < 0.05,
+                         "re-clocked rate is within 0.05 Hz of the request",
+                         String(format: "asked %.3f, got %.3f", target, retimed.refreshRate))
+            checks.check(retimed.hTotal == preferred.hTotal && retimed.vTotal == preferred.vTotal,
+                         "re-clock keeps totals")
 
             // 3. Patching the EDID must keep the blob intact and the preferred
             //    timing untouched.
             let patched = edid.adding(retimed)
-            check(patched != nil, "EDID accepts an extra timing")
+            checks.check(patched != nil, "EDID accepts an extra timing")
             if let patched {
-                check(patched.bytes.count == edid.bytes.count, "block count unchanged",
-                      "\(patched.blockCount) of \(edid.blockCount)")
-                check(patched.hasValidChecksums, "patched checksums valid")
-                check(patched.preferredTiming == preferred, "preferred timing untouched")
-                check(patched.detailedTimings.contains { abs($0.refreshRate - target) < 0.05 },
-                      "patched timing is enumerable")
-                check(patched.productName == edid.productName, "product name survives the patch")
+                checks.check(patched.bytes.count == edid.bytes.count, "block count unchanged",
+                             "\(patched.blockCount) of \(edid.blockCount)")
+                checks.check(patched.hasValidChecksums, "patched checksums valid")
+                checks.check(patched.preferredTiming == preferred, "preferred timing untouched")
+                checks.check(patched.detailedTimings.contains { abs($0.refreshRate - target) < 0.05 },
+                             "patched timing is enumerable")
+                checks.check(patched.productName == edid.productName,
+                             "product name survives the patch")
             }
         } else {
-            check(false, "re-clock produces a descriptor")
+            checks.check(false, "re-clock produces a descriptor")
         }
 
         // 4. Scaling to a smaller geometry: blanking ratios carry over and the
@@ -83,37 +185,24 @@ enum TimingSelfTest {
         if let synthetic = preferred.scaled(toWidth: preferred.width / 2,
                                             toHeight: preferred.height / 2,
                                             refresh: 60) {
-            check(synthetic.width == preferred.width / 2 && synthetic.height == preferred.height / 2,
-                  "scaled geometry is exact")
-            check(synthetic.hBlank - synthetic.hFrontPorch - synthetic.hSyncWidth > 0,
-                  "scaled horizontal blanking has a back porch",
-                  "blank \(synthetic.hBlank), front \(synthetic.hFrontPorch), sync \(synthetic.hSyncWidth)")
-            check(synthetic.vBlank - synthetic.vFrontPorch - synthetic.vSyncWidth > 0,
-                  "scaled vertical blanking has a back porch",
-                  "blank \(synthetic.vBlank), front \(synthetic.vFrontPorch), sync \(synthetic.vSyncWidth)")
-            check(abs(synthetic.refreshRate - 60) < 0.05, "scaled rate is 60 Hz",
-                  String(format: "%.3f Hz", synthetic.refreshRate))
+            checks.check(synthetic.width == preferred.width / 2
+                         && synthetic.height == preferred.height / 2,
+                         "scaled geometry is exact")
+            checks.check(synthetic.hBlank - synthetic.hFrontPorch - synthetic.hSyncWidth > 0,
+                         "scaled horizontal blanking has a back porch",
+                         "blank \(synthetic.hBlank), front \(synthetic.hFrontPorch), "
+                         + "sync \(synthetic.hSyncWidth)")
+            checks.check(synthetic.vBlank - synthetic.vFrontPorch - synthetic.vSyncWidth > 0,
+                         "scaled vertical blanking has a back porch",
+                         "blank \(synthetic.vBlank), front \(synthetic.vFrontPorch), "
+                         + "sync \(synthetic.vSyncWidth)")
+            checks.check(abs(synthetic.refreshRate - 60) < 0.05, "scaled rate is 60 Hz",
+                         String(format: "%.3f Hz", synthetic.refreshRate))
         } else {
-            check(false, "scaling to half geometry succeeds")
+            checks.check(false, "scaling to half geometry succeeds")
         }
 
-        // 5. Short-format parsing: a 4K panel should report at least one CEA rate.
-        let short = edid.declaredRates.filter { $0.source == .ceaShortFormat }
-        check(!short.isEmpty, "CEA short formats parsed", "\(short.count) entries")
-
-        // 6. Geometry matching must accept both point and pixel sizes.
-        let modes = DisplayManager.allModes(for: displays[displayIndex].id)
-        let declared = edid.declaredRates
-        let unmatched = declared.filter { rate in
-            !modes.contains {
-                ($0.width == rate.width && $0.height == rate.height)
-                    || ($0.pixelWidth == rate.width && $0.pixelHeight == rate.height)
-            }
-        }
-        check(unmatched.count <= declared.count,
-              "geometry matching runs", "\(unmatched.count) of \(declared.count) not offered")
-
-        // 7. `--refresh-audit` exists to distinguish four causes that have
+        // 5. `--refresh-audit` exists to distinguish four causes that have
         //    nothing in common. Each implies a different fix, so each verdict
         //    gets pinned here rather than trusted to read correctly in a table.
         func geometry(offered: [Double], declared: [Double],
@@ -122,32 +211,32 @@ enum TimingSelfTest {
                 width: 3840, height: 2160, pointSizes: [],
                 offeredRates: offered, declaredRates: declared, ceiling: ceiling)
         }
-        check(geometry(offered: [60, 50], declared: [60, 50], ceiling: 67).verdict(for: 60) == .offered,
-              "audit: a listed rate reads as offered")
-        check(geometry(offered: [30], declared: [60, 30], ceiling: 67).verdict(for: 60) == .hidden,
-              "audit: declared but unlisted reads as hidden")
-        check(geometry(offered: [], declared: [60], ceiling: 67).verdict(for: 60) == .hidden,
-              "audit: a whole missing geometry still reads as hidden")
-        check(geometry(offered: [30], declared: [30], ceiling: 67).verdict(for: 60) == .synthesizable,
-              "audit: budgeted but undeclared reads as synthesizable")
-        check(geometry(offered: [30], declared: [30], ceiling: 30).verdict(for: 60) == .beyondLink,
-              "audit: over-budget reads as beyond link")
-        check(geometry(offered: [30], declared: [30], ceiling: nil).verdict(for: 60) == .unknown,
-              "audit: a missing budget reads as unknown")
+        checks.check(geometry(offered: [60, 50], declared: [60, 50], ceiling: 67).verdict(for: 60) == .offered,
+                     "audit: a listed rate reads as offered")
+        checks.check(geometry(offered: [30], declared: [60, 30], ceiling: 67).verdict(for: 60) == .hidden,
+                     "audit: declared but unlisted reads as hidden")
+        checks.check(geometry(offered: [], declared: [60], ceiling: 67).verdict(for: 60) == .hidden,
+                     "audit: a whole missing geometry still reads as hidden")
+        checks.check(geometry(offered: [30], declared: [30], ceiling: 67).verdict(for: 60) == .synthesizable,
+                     "audit: budgeted but undeclared reads as synthesizable")
+        checks.check(geometry(offered: [30], declared: [30], ceiling: 30).verdict(for: 60) == .beyondLink,
+                     "audit: over-budget reads as beyond link")
+        checks.check(geometry(offered: [30], declared: [30], ceiling: nil).verdict(for: 60) == .unknown,
+                     "audit: a missing budget reads as unknown")
         // CoreGraphics rounds 59.94 to 60 in the mode list while the panel's
         // descriptor keeps 59.94. Without the 0.5 Hz tolerance every 1000/1001
         // rate would read as missing from a mode that is right there.
-        check(geometry(offered: [59.94], declared: [59.94], ceiling: 67).verdict(for: 60) == .offered,
-              "audit: 59.94 and 60 are one answer, not two")
+        checks.check(geometry(offered: [59.94], declared: [59.94], ceiling: 67).verdict(for: 60) == .offered,
+                     "audit: 59.94 and 60 are one answer, not two")
 
         let mixed = DisplayCapabilities.RefreshAudit(
             target: 60,
             geometries: [geometry(offered: [30], declared: [30], ceiling: 30),
                          geometry(offered: [60], declared: [60], ceiling: 67)])
-        check(mixed.recommendedGeometry?.ceiling == 67,
-              "audit: the verdict skips geometries the link cannot carry")
+        checks.check(mixed.recommendedGeometry?.ceiling == 67,
+                     "audit: the verdict skips geometries the link cannot carry")
 
-        // 8. The largest geometry that reaches a rate and the largest geometry
+        // 6. The largest geometry that reaches a rate and the largest geometry
         //    that already offers it are two different answers, and the CLI has to
         //    name both. Reporting only the first sends someone off to synthesise
         //    a timing at 1920 × 1080 when 640 × 480 has listed the rate all along.
@@ -157,16 +246,114 @@ enum TimingSelfTest {
         let twoWay = DisplayCapabilities.RefreshAudit(
             target: 75,
             geometries: [geometry(offered: [60], declared: [60], ceiling: 76), ready])
-        check(twoWay.recommendedGeometry?.width == 3840,
-              "audit: the largest reachable geometry decides the verdict")
-        check(twoWay.offeredAtAnyGeometry?.width == 640,
-              "audit: an already-listed smaller geometry is reported separately")
-        check(twoWay.offeredAtAnyGeometry?.verdict(for: twoWay.target) == .offered,
-              "audit: that smaller geometry really is offered")
-        check(mixed.offeredAtAnyGeometry?.ceiling == 67,
-              "audit: when the top geometry is already offered, the two answers agree")
+        checks.check(twoWay.recommendedGeometry?.width == 3840,
+                     "audit: the largest reachable geometry decides the verdict")
+        checks.check(twoWay.offeredAtAnyGeometry?.width == 640,
+                     "audit: an already-listed smaller geometry is reported separately")
+        checks.check(twoWay.offeredAtAnyGeometry?.verdict(for: twoWay.target) == .offered,
+                     "audit: that smaller geometry really is offered")
+        checks.check(mixed.offeredAtAnyGeometry?.ceiling == 67,
+                     "audit: when the top geometry is already offered, the two answers agree")
 
-        print(failures == 0 ? "\nall checks passed" : "\n\(failures) check(s) failed")
-        return failures == 0 ? 0 : 1
+        // Table order ranks native and panel-declared rows above size, so "the
+        // first offered row" is not "the largest offered row": 75 Hz can be
+        // listed at 640 × 480 near the top and at 2048 × 1536 further down.
+        // Reporting the smaller one answers a question nobody asked.
+        let ladder = DisplayCapabilities.RefreshAudit(
+            target: 75,
+            geometries: [ready,
+                         DisplayCapabilities.RefreshAudit.Geometry(
+                            width: 2048, height: 1536, pointSizes: [],
+                            offeredRates: [75], declaredRates: [], ceiling: 76)])
+        checks.check(ladder.offeredAtAnyGeometry?.width == 2048,
+                     "audit: already offered means the largest such geometry, not the first row")
+
+        // 7. An unreadable budget is not the same answer as a budget that is too
+        //    small. Every row reading `unknown` means nothing was measured, and
+        //    "the link tops out below it" would be inventing one.
+        let undetermined = DisplayCapabilities.RefreshAudit(
+            target: 60,
+            geometries: [geometry(offered: [30], declared: [30], ceiling: nil)])
+        checks.check(undetermined.isUndetermined,
+                     "audit: a report with no readable budget is undetermined, not unreachable")
+        checks.check(!mixed.isUndetermined,
+                     "audit: one readable row is enough to decide")
+
+        // 8. End to end on the fixture: the whole assembly — grouping modes by
+        //    output geometry, collapsing 1000/1001 pairs, ordering, the link
+        //    ceiling — not just `verdict()` in isolation.
+        let audit = fixtureReport(edid).audit(target: 75)
+        func row(_ width: Int, _ height: Int) -> DisplayCapabilities.RefreshAudit.Geometry? {
+            audit.geometries.first { $0.width == width && $0.height == height }
+        }
+        checks.check(audit.geometries.count == 2, "audit end to end: one row per output geometry",
+                     "\(audit.geometries.count) rows")
+        checks.check(audit.geometries.first?.width == 3840,
+                     "audit end to end: the native geometry leads the table")
+        checks.check(row(3840, 2160)?.verdict(for: 75) == .beyondLink,
+                     "audit end to end: the native row is past the link at 75 Hz")
+        checks.check(row(1920, 1080)?.verdict(for: 75) == .hidden,
+                     "audit end to end: declared-but-unlisted reads as hidden")
+        checks.check(audit.recommendedGeometry?.width == 1920,
+                     "audit end to end: the verdict skips the row the link cannot carry")
+        checks.check(audit.offeredAtAnyGeometry == nil,
+                     "audit end to end: nothing offers 75 Hz yet")
+        checks.check(row(3840, 2160)?.verdict(for: 60) == .offered,
+                     "audit end to end: the same row reads as offered at 60 Hz")
+        checks.check(fixtureReport(edid).audit(target: 60).offeredAtAnyGeometry?.width == 3840,
+                     "audit end to end: the zero-work answer is the largest offered row")
+        checks.check(fixtureReport(edid).audit().target == 75,
+                     "audit end to end: the default target is the highest declared rate")
+        checks.check(row(3840, 2160)?.pointSizes.contains {
+                         $0.width == 1920 && $0.height == 1080 && $0.scale > 1.01
+                     } == true,
+                     "audit end to end: an HiDPI point size lands on the timing it drives")
+    }
+
+    // MARK: - Real panel
+
+    private static func realPanelChecks(_ checks: inout Checks, displayIndex: Int) {
+        let displays = DisplayManager.allDisplays()
+        guard !displays.isEmpty else {
+            print("SKIP  no display attached — real-EDID checks not run")
+            return
+        }
+        guard displayIndex >= 0, displayIndex < displays.count else {
+            checks.check(false, "display \(displayIndex) exists", "\(displays.count) attached")
+            return
+        }
+        guard let edid = DisplayEDIDReader.read(for: displays[displayIndex].id) else {
+            checks.check(false, "EDID readable for display \(displayIndex)")
+            return
+        }
+
+        print("EDID     \(edid.manufacturerCode) 0x\(String(format: "%04X", edid.product))"
+              + "  \(edid.productName ?? "unnamed")  blocks=\(edid.blockCount)")
+        checks.check(edid.hasValidChecksums, "block checksums are valid",
+                     "\(edid.blockCount) block(s)")
+
+        if let preferred = edid.preferredTiming {
+            checks.check(preferred.refreshRate > 20 && preferred.refreshRate < 300,
+                         "panel: preferred refresh is plausible",
+                         String(format: "%.3f Hz", preferred.refreshRate))
+        } else {
+            checks.check(false, "panel: preferred timing decodes")
+        }
+
+        // Short-format parsing: a 4K panel should report at least one CEA rate.
+        let short = edid.declaredRates.filter { $0.source == .ceaShortFormat }
+        checks.check(!short.isEmpty, "CEA short formats parsed", "\(short.count) entries")
+
+        // Geometry matching must accept both point and pixel sizes.
+        let modes = DisplayManager.allModes(for: displays[displayIndex].id)
+        let declared = edid.declaredRates
+        let unmatched = declared.filter { rate in
+            !modes.contains {
+                ($0.width == rate.width && $0.height == rate.height)
+                    || ($0.pixelWidth == rate.width && $0.pixelHeight == rate.height)
+            }
+        }
+        checks.check(unmatched.count <= declared.count,
+                     "geometry matching runs", "\(unmatched.count) of \(declared.count) not offered")
     }
 }

@@ -140,6 +140,7 @@ public enum L10n {
         "error.timingNoSlot": "The EDID has no free descriptor slot for another timing",
         "error.timingSyntax": "Expected a timing like 3840x2160@75",
         "error.refreshOutOfRange": "A refresh rate has to be above 1 Hz and at most 1000 Hz",
+        "error.jsonUnsupportedEDID": "--edid has no JSON form: the EDID is binary. Use --emit-edid <path> to write the blob out",
         "error.timingOverride": "The display override could not be prepared",
         "error.overrideCancelled": "Cancelled — nothing was changed",
         "error.overrideFailed": "The display override could not be written",
@@ -207,6 +208,7 @@ public enum L10n {
           rdm-arm --rotation 90 -d 1
           rdm-arm --capabilities -d 1
           rdm-arm --refresh-audit -r 60 -d 1
+          rdm-arm --refresh-audit -r 75 --json | jq .verdict
           rdm-arm --custom-timing 1920x1080@75 --write --keep -d 1
         """,
 
@@ -299,6 +301,7 @@ public enum L10n {
         "error.timingNoSlot": "EDID 里没有空闲的时序描述符槽位",
         "error.timingSyntax": "格式应为 3840x2160@75",
         "error.refreshOutOfRange": "刷新率需要高于 1 Hz 且不超过 1000 Hz",
+        "error.jsonUnsupportedEDID": "--edid 没有 JSON 形式：EDID 本身就是二进制。要导出原始数据，用 --emit-edid <路径>",
         "error.timingOverride": "无法准备显示器 override",
         "error.overrideCancelled": "已取消，未做任何更改",
         "error.overrideFailed": "无法写入显示器 override",
@@ -366,6 +369,7 @@ public enum L10n {
           rdm-arm --rotation 90 -d 1
           rdm-arm --capabilities -d 1
           rdm-arm --refresh-audit -r 60 -d 1
+          rdm-arm --refresh-audit -r 75 --json | jq .verdict
           rdm-arm --custom-timing 1920x1080@75 --write --keep -d 1
         """,
 
