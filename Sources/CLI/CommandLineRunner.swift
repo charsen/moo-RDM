@@ -478,6 +478,15 @@ public enum CommandLineRunner {
     /// declared the rate but the link has room, or the link cannot carry it. Only
     /// the first two are software problems, and only the first is free.
     private static func runRefreshAudit(_ options: Options) -> Int32 {
+        // The audit ends by recommending a `--custom-timing` command, and that
+        // command accepts only (1, 1000]. Screening here keeps the advice honest:
+        // `-r 0` used to produce "try --custom-timing 3840x2160@0", a command
+        // whose own parser rejects it — advice that cannot be followed.
+        if let requested = options.refresh, requested <= 1 || requested > 1000 {
+            writeError(L10n.t("error.refreshOutOfRange"))
+            return 2
+        }
+
         guard let display = resolveTarget(options) else { return 1 }
         let report = DisplayCapabilities.report(for: display.id)
         guard report.edid != nil else {
@@ -554,14 +563,17 @@ public enum CommandLineRunner {
             case .hidden:
                 print("    verdict        the panel declares it, macOS does not list it")
                 if let point = best.pointSizes.first {
+                    // `-d` matters as soon as a second display exists: without it
+                    // the command silently targets the main display instead of the
+                    // one just audited.
                     print("                   rdm-arm -w \(point.width) -h \(point.height)"
-                          + " -r \(rateText(target))")
+                          + " -r \(rateText(target)) -d \(display.ordinal)")
                 }
             case .synthesizable:
                 print("    verdict        within the link budget at \(best.pixelDescription),"
                       + " but the panel never declared it")
                 print("                   rdm-arm --custom-timing "
-                      + "\(best.width)x\(best.height)@\(rateText(target))")
+                      + "\(best.width)x\(best.height)@\(rateText(target)) -d \(display.ordinal)")
                 if !DisplayOverrideInstaller.support.isAvailable {
                     print("                   (computes only — Apple silicon ignores the override)")
                 }

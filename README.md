@@ -127,6 +127,7 @@ RDM-ARM 走第二条，但先把"能不能"算清楚再动手：
 | 面板在 EDID 里写了，macOS 没列出来 | `hidden by macOS` | 能，直接切（私有模式表已有该档位） |
 | 面板没写，但链路带宽够 | `not declared` | 要合成新时序，Apple 芯片上做不到（见下文） |
 | 链路带宽本来就不够 | `beyond link` | 不能。只能降分辨率或换线 |
+| 链路预算读不到（非 Apple 面板、或可选模块关闭） | `unknown` | 判断不了。表格里那一行不会印 `ceiling`，只能看实际切换结果 |
 
 `--refresh-audit` 就是对这三层做交叉比对。不指定 `-r` 时，默认审的是「面板声明的最高刷新率」——因为那才是大家真正想问的问题：
 
@@ -150,7 +151,7 @@ Display 0: BenQ PD2705U
 ```
 $ rdm-arm --refresh-audit -r 75
     verdict        within the link budget at 1920 × 1080, but the panel never declared it
-                   rdm-arm --custom-timing 1920x1080@75
+                   rdm-arm --custom-timing 1920x1080@75 -d 0
                    (computes only — Apple silicon ignores the override)
                    already offered at 640 × 480
 

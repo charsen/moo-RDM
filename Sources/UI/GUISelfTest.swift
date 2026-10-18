@@ -81,6 +81,12 @@ enum GUISelfTest {
         let menu = NSMenu()
         StatusMenuBuilder.build(into: menu, router: router)
 
+        // The capability submenu fills itself when it is opened — that is the
+        // point of it — so ask every submenu to update before walking the tree.
+        // Without this the dump would show an empty section and report it as
+        // correct, which is the one failure mode a self test must not have.
+        primeLazySubmenus(menu)
+
         emit("top level items: \(menu.items.count)")
         for item in menu.items {
             dump(item, depth: 1, emit: emit)
@@ -183,6 +189,14 @@ enum GUISelfTest {
     }
 
     // MARK: - Helpers
+
+    /// Makes on-demand submenus build their contents, so `dump` can see them.
+    private static func primeLazySubmenus(_ menu: NSMenu) {
+        menu.delegate?.menuNeedsUpdate?(menu)
+        for item in menu.items {
+            if let submenu = item.submenu { primeLazySubmenus(submenu) }
+        }
+    }
 
     private static func fmt(_ rect: CGRect) -> String {
         String(format: "%.0fx%.0f @ %.0f,%.0f",

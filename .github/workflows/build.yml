@@ -73,6 +73,14 @@ jobs:
           # A headless runner has no displays; -ld must still exit 0.
           "$BIN" -ld
           "$BIN" -lm --json > /dev/null
+          # Asking about a display that is not there must be a clean exit 1 with a
+          # message, not a crash: `--refresh-audit` reads EDID through IOKit and
+          # enumerates modes, and neither is guaranteed to return anything.
+          set +e
+          "$BIN" --refresh-audit -d 99
+          code=$?
+          set -e
+          test "$code" -eq 1 || { echo "::error::refresh-audit on a missing display exited $code"; exit 1; }
           echo "CLI ok"
 
       - name: Package release zip

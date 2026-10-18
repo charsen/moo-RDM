@@ -175,15 +175,33 @@ enum StatusMenuBuilder {
     /// administrator password and can black the screen, so it stays behind the
     /// CLI where a timeout and an automatic rollback already exist — a menu click
     /// is not the right place to start that chain.
+    ///
+    /// The contents are built when the submenu is opened, not here. Filling them
+    /// reads the EDID through IOKit, enumerates every mode and queries a private
+    /// class — 40–60 ms measured per display. Paying that on every `menuWillOpen`,
+    /// for a submenu most openings never touch, is what makes the menu sticky.
     private static func capabilitiesItem(for display: DisplayInfo) -> NSMenuItem {
         let parent = NSMenuItem(title: L10n.t("menu.capabilities"), action: nil, keyEquivalent: "")
         let submenu = NSMenu()
 
+        let lazy = LazyCapabilitiesMenu(display: display)
+        submenu.delegate = lazy
+        // `NSMenu.delegate` is weak, so the delegate needs an owner. Tying it to
+        // the menu means it is released with the menu instead of accumulating one
+        // more entry per rebuild.
+        objc_setAssociatedObject(submenu, &capabilityDelegateKey, lazy,
+                                 .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+
+        parent.submenu = submenu
+        return parent
+    }
+
+    /// Fills the submenu that `capabilitiesItem` handed out empty.
+    fileprivate static func populateCapabilities(into submenu: NSMenu, for display: DisplayInfo) {
         let report = DisplayCapabilities.report(for: display.id)
         guard let edid = report.edid else {
             submenu.addItem(disabled(L10n.t("menu.capabilities.noEDID")))
-            parent.submenu = submenu
-            return parent
+            return
         }
 
         if let timing = report.nativeTiming {
@@ -212,9 +230,10 @@ enum StatusMenuBuilder {
         submenu.addItem(disabled(L10n.t(DisplayOverrideInstaller.support.isAvailable
                                         ? "menu.capabilities.cliHint"
                                         : "menu.capabilities.inert")))
-        parent.submenu = submenu
-        return parent
     }
+
+    /// Associated-object key for the lazily built capability submenu.
+    private static var capabilityDelegateKey: UInt8 = 0
 
     // MARK: - Rotation
     private static func rotationItem(for display: DisplayInfo,
@@ -294,5 +313,24 @@ enum StatusMenuBuilder {
         let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
         item.isEnabled = false
         return item
+    }
+}
+
+/// Builds the capability submenu the first time it is opened, and again on every
+/// later opening, so it never shows a stale EDID after a cable swap.
+///
+/// Held alive by an associated object on the menu it serves — see
+/// `StatusMenuBuilder.capabilitiesItem`.
+private final class LazyCapabilitiesMenu: NSObject, NSMenuDelegate {
+
+    private let display: DisplayInfo
+
+    init(display: DisplayInfo) {
+        self.display = display
+    }
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
+        StatusMenuBuilder.populateCapabilities(into: menu, for: display)
     }
 }
