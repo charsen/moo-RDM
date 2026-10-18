@@ -56,6 +56,7 @@ enum StatusMenuBuilder {
         if let refreshItem = refreshRateItem(for: display, router: router) {
             submenu.addItem(refreshItem)
         }
+        submenu.addItem(capabilitiesItem(for: display))
         submenu.addItem(.separator())
 
         let box = DisplayBox(displayID: display.id)
@@ -166,8 +167,56 @@ enum StatusMenuBuilder {
         return parent
     }
 
-    // MARK: - Rotation
+    // MARK: - Hardware limits
 
+    /// What the panel declares and what the link allows, in one read-only place.
+    ///
+    /// This is deliberately informational. Writing an override asks for an
+    /// administrator password and can black the screen, so it stays behind the
+    /// CLI where a timeout and an automatic rollback already exist — a menu click
+    /// is not the right place to start that chain.
+    private static func capabilitiesItem(for display: DisplayInfo) -> NSMenuItem {
+        let parent = NSMenuItem(title: L10n.t("menu.capabilities"), action: nil, keyEquivalent: "")
+        let submenu = NSMenu()
+
+        let report = DisplayCapabilities.report(for: display.id)
+        guard let edid = report.edid else {
+            submenu.addItem(disabled(L10n.t("menu.capabilities.noEDID")))
+            parent.submenu = submenu
+            return parent
+        }
+
+        if let timing = report.nativeTiming {
+            submenu.addItem(disabled(L10n.t("menu.capabilities.native", timing.description)))
+        }
+        let budget = report.budgetDescription()
+        if !budget.isEmpty {
+            submenu.addItem(disabled(L10n.t("menu.capabilities.link", budget)))
+        }
+
+        if report.hiddenRates.isEmpty {
+            submenu.addItem(disabled(L10n.t("menu.capabilities.nothingHidden")))
+        } else {
+            for rate in report.hiddenRates.prefix(8) {
+                submenu.addItem(disabled(L10n.t("menu.capabilities.hidden", rate.description)))
+            }
+        }
+        if DisplayOverrideInstaller.hasOverride(for: edid) {
+            submenu.addItem(disabled(L10n.t("menu.capabilities.override")))
+        }
+
+        submenu.addItem(.separator())
+        // Same reasoning as the CLI gate: a hint that leads to a no-op is worse
+        // than no hint at all, so the menu says which of the two situations the
+        // machine is in before the user goes looking for the command.
+        submenu.addItem(disabled(L10n.t(DisplayOverrideInstaller.support.isAvailable
+                                        ? "menu.capabilities.cliHint"
+                                        : "menu.capabilities.inert")))
+        parent.submenu = submenu
+        return parent
+    }
+
+    // MARK: - Rotation
     private static func rotationItem(for display: DisplayInfo,
                                      router: MenuActionRouter) -> NSMenuItem? {
         guard DisplayRotationController.isAvailable else { return nil }

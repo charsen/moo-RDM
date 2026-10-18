@@ -21,6 +21,19 @@ public enum CommandLineRunner {
         var listDisplays = false
         var listModes = false
 
+        /// EDID dump and the derived bandwidth/refresh ceilings.
+        var showEDID = false
+        var showCapabilities = false
+        /// "3840x2160@75" — a rate that has to be synthesised, not selected.
+        var customTiming: String?
+        var writeOverride = false
+        var keepOverride = false
+        var revertOverride = false
+        var sleepWake = false
+        var overrideTimeout: Double = 20
+        /// Where to dump the patched EDID, for inspection with an EDID editor.
+        var emitPath: String?
+
         var includeUnusable = true
         var hiDPIOnly = false
         var json = false
@@ -28,6 +41,7 @@ public enum CommandLineRunner {
 
         var showHelp = false
         var showVersion = false
+        var selfTestTiming = false
 
         /// True when the user asked us to actually change something.
         var wantsChange: Bool {
@@ -64,11 +78,23 @@ public enum CommandLineRunner {
             print(AppInfo.versionDescription)
             return 0
         }
+        if options.selfTestTiming {
+            return TimingSelfTest.run(displayIndex: options.displayIndex)
+        }
         if options.listDisplays {
             return listDisplays(options)
         }
         if options.listModes {
             return listModes(options)
+        }
+        if options.showEDID {
+            return dumpEDID(options)
+        }
+        if options.showCapabilities {
+            return showCapabilities(options)
+        }
+        if options.customTiming != nil || options.revertOverride {
+            return customTiming(options)
         }
         if options.wantsChange {
             return changeMode(options)
@@ -131,6 +157,27 @@ public enum CommandLineRunner {
                 options.json = true
             case "--permanent":
                 options.permanent = true
+
+            case "--edid":
+                options.showEDID = true
+            case "--capabilities":
+                options.showCapabilities = true
+            case "--custom-timing":
+                options.customTiming = try value(argument)
+            case "--write":
+                options.writeOverride = true
+            case "--keep":
+                options.keepOverride = true
+            case "--revert":
+                options.revertOverride = true
+            case "--sleep-wake":
+                options.sleepWake = true
+            case "--emit-edid":
+                options.emitPath = try value(argument)
+            case "--timeout":
+                options.overrideTimeout = try doubleValue(argument)
+            case "--selftest-timing":
+                options.selfTestTiming = true
 
             case "-w", "--width":
                 options.width = try intValue(argument)
@@ -313,6 +360,273 @@ public enum CommandLineRunner {
         }
 
         return exitCode
+    }
+
+    // MARK: - EDID and hardware limits
+
+    private static func dumpEDID(_ options: Options) -> Int32 {
+        guard let display = resolveTarget(options) else { return 1 }
+        guard let edid = DisplayEDIDReader.read(for: display.id) else {
+            writeError(L10n.t("error.timingNoEDID"))
+            return 1
+        }
+        let attributes = DisplayLinkInfo.attributes(vendor: edid.vendor,
+                                                    product: edid.product,
+                                                    serial: edid.serial)
+
+        print("Display \(display.ordinal): \(display.name)")
+        print(String(format: "    vendor      %@ (0x%04X)", edid.manufacturerCode, edid.vendor))
+        print(String(format: "    product     0x%04X", edid.product)
+              + (edid.productName.map { " (\($0))" } ?? ""))
+        print("    serial      \(edid.serial)")
+        print("    blocks      \(edid.blockCount), checksums "
+              + (edid.hasValidChecksums ? "valid" : "INVALID"))
+        if let rate = DisplayLinkInfo.maxPixelRate(productName: edid.productName) {
+            print(String(format: "    link        %.0f MHz max pixel rate", Double(rate) / 1_000_000))
+        }
+        if let low = (attributes?["MinimumRefreshRate"] as? NSNumber)?.doubleValue,
+           let high = (attributes?["MaximumRefreshRate"] as? NSNumber)?.doubleValue {
+            print(String(format: "    range       %.0f–%.0f Hz (vendor reference)", low, high))
+        }
+        if let width = (attributes?["NativeFormatHorizontalPixels"] as? NSNumber)?.intValue,
+           let height = (attributes?["NativeFormatVerticalPixels"] as? NSNumber)?.intValue {
+            print("    native      \(width) × \(height)")
+        } else if let native = edid.preferredTiming {
+            print("    native      \(native.width) × \(native.height)")
+        }
+
+        print("    detailed timings")
+        for timing in edid.detailedTimings {
+            print("      \(timing.description)")
+        }
+
+        let shortFormats = edid.declaredRates.filter { $0.source == .ceaShortFormat }
+        if !shortFormats.isEmpty {
+            var seen: Set<String> = []
+            let unique = shortFormats.filter {
+                seen.insert($0.description).inserted
+            }
+            print("    CEA short formats (\(unique.count))")
+            for format in unique.prefix(16) {
+                print("      \(format.description)")
+            }
+            if unique.count > 16 { print("      … \(unique.count - 16) more") }
+        }
+
+        if DisplayOverrideInstaller.hasOverride(for: edid) {
+            print("    override    installed (\(DisplayOverrideInstaller.target(for: edid).path))")
+        }
+        return 0
+    }
+
+    private static func showCapabilities(_ options: Options) -> Int32 {
+        guard let display = resolveTarget(options) else { return 1 }
+        let report = DisplayCapabilities.report(for: display.id)
+        guard let edid = report.edid else {
+            writeError(L10n.t("error.timingNoEDID"))
+            return 1
+        }
+
+        print("Display \(display.ordinal): \(display.name)")
+        if let timing = report.nativeTiming {
+            print("    native timing  \(timing.description)")
+        }
+        let budget = report.budgetDescription()
+        print("    budget         \(budget)")
+
+        if let native = report.nativeFormat
+            ?? report.nativeTiming.map({ PixelSize(width: $0.width, height: $0.height) }),
+           let ceiling = report.estimatedMaximumRefresh(width: native.width, height: native.height) {
+            print(String(format: "    at %d × %d      up to %.0f Hz by budget",
+                         native.width, native.height, ceiling))
+        }
+
+        if report.hiddenRates.isEmpty {
+            print("    hidden rates   none — every declared rate has a mode")
+        } else {
+            print("    hidden rates   declared by EDID, not offered by macOS")
+            for rate in report.hiddenRates {
+                print("      \(rate.description)  [\(rate.source.rawValue)]")
+            }
+        }
+
+        if DisplayOverrideInstaller.hasOverride(for: edid) {
+            print("    override       installed")
+            print("                   remove with --revert -d \(display.ordinal)")
+        } else if DisplayOverrideInstaller.support.isAvailable {
+            print("    beyond         rdm-arm --custom-timing <w>x<h>@<hz> --write -d \(display.ordinal)")
+        } else {
+            // Recommending a command that is known to be a no-op here would be
+            // the same dishonesty as reporting success for it.
+            print("    beyond         timing computed, but a display override is ignored on Apple silicon")
+        }
+        return 0
+    }
+
+    // MARK: - Custom timing
+
+    /// "3840x2160@75" → geometry plus a refresh rate that has to be synthesised.
+    private struct TimingSpec {
+        let width: Int
+        let height: Int
+        let refresh: Double
+
+        init?(_ text: String) {
+            let halves = text.lowercased().split(separator: "@")
+            guard halves.count == 2 else { return nil }
+            let size = halves[0].split(whereSeparator: { $0 == "x" || $0 == "×" || $0 == "*" })
+            guard size.count == 2,
+                  let width = Int(size[0]), let height = Int(size[1]),
+                  let refresh = Double(halves[1]),
+                  width > 0, height > 0, refresh > 1, refresh <= 1000 else { return nil }
+            self.width = width
+            self.height = height
+            self.refresh = refresh
+        }
+    }
+
+    private static func customTiming(_ options: Options) -> Int32 {
+        guard let display = resolveTarget(options) else { return 1 }
+
+        if options.revertOverride {
+            do {
+                try CustomTimingEngine.revert(for: display.id)
+                print(L10n.t("cli.timingReverted", display.name))
+                return 0
+            } catch {
+                writeError("\(error)")
+                return 1
+            }
+        }
+
+        guard let raw = options.customTiming, let spec = TimingSpec(raw) else {
+            writeError(L10n.t("error.timingSyntax"))
+            return 2
+        }
+
+        let proposal: CustomTimingEngine.Proposal
+        switch CustomTimingEngine.propose(width: spec.width, height: spec.height,
+                                          refresh: spec.refresh, for: display.id) {
+        case .success(let value): proposal = value
+        case .failure(let error):
+            writeError(error.description)
+            return 1
+        }
+
+        print("Display \(display.ordinal): \(display.name)")
+        print(String(format: "    requested      %d × %d @ %.3f Hz",
+                     proposal.width, proposal.height, proposal.requestedRefresh))
+        print(String(format: "    encoded        %d × %d @ %.3f Hz  (%.2f MHz, totals %d × %d)",
+                     proposal.timing.width, proposal.timing.height, proposal.encodedRefresh,
+                     proposal.pixelRateMHz, proposal.timing.hTotal, proposal.timing.vTotal))
+        if abs(proposal.quantisationError) > 0.01 {
+            print(String(format: "    quantisation   %+.3f Hz from the 10 kHz pixel-clock grid",
+                         proposal.quantisationError))
+        }
+        if let ceiling = proposal.estimatedMaximumRefresh {
+            print(String(format: "    ceiling        %.0f Hz by link and vendor range",
+                         ceiling))
+        }
+        if proposal.isSyntheticGeometry {
+            print("    note           no descriptor at this geometry — blanking scaled from native")
+        }
+
+        if let path = options.emitPath {
+            do {
+                try proposal.edid.data.write(to: URL(fileURLWithPath: path))
+                print("    emitted        \(path) (\(proposal.edid.data.count) bytes, "
+                      + "checksums \(proposal.edid.hasValidChecksums ? "valid" : "INVALID"))")
+            } catch {
+                writeError("\(error)")
+                return 1
+            }
+        }
+
+        // The timing can be computed everywhere; handing it to the system cannot.
+        // Saying so here costs nothing and saves an administrator prompt that is
+        // guaranteed to end in "mode list unchanged".
+        if options.writeOverride, !DisplayOverrideInstaller.support.isAvailable {
+            writeError(L10n.t("error.overrideInert"))
+            return 3
+        }
+
+        guard options.writeOverride else {
+            print(L10n.t(DisplayOverrideInstaller.support.isAvailable
+                         ? "cli.timingDryRun"
+                         : "cli.timingDryRunInert"))
+            return 0
+        }
+
+        print("    override       \(DisplayOverrideInstaller.target(for: proposal.edid).path)")
+
+        let observedChange: Bool
+        do {
+            observedChange = try CustomTimingEngine.install(proposal, for: display.id)
+        } catch {
+            writeError("\(error)")
+            return 1
+        }
+
+        if observedChange {
+            print("    reprobe        mode list changed — the timing was accepted for enumeration")
+        } else {
+            print("    reprobe        mode list unchanged")
+            if options.sleepWake {
+                print("    sleep/wake     cycling display power to force re-enumeration")
+                sleepWakeCycle()
+                print("    sleep/wake     done — check the display")
+            } else {
+                print("    next           re-plug the display, or re-run with --sleep-wake")
+            }
+        }
+
+        if options.keepOverride {
+            print(L10n.t("cli.timingKept"))
+            return 0
+        }
+
+        // Anything that can black the screen has to undo itself. The user keeps
+        // the override by re-running with --keep, which means the *absence* of a
+        // decision always lands on the safe side.
+        let seconds = max(3, options.overrideTimeout)
+        print(L10n.t("cli.timingWatchdog", Int32(seconds.rounded())))
+        Thread.sleep(forTimeInterval: seconds)
+
+        do {
+            try CustomTimingEngine.revert(for: display.id)
+            print(L10n.t("cli.timingReverted", display.name))
+        } catch {
+            writeError("\(error)")
+            return 1
+        }
+        return 0
+    }
+
+    private static func sleepWakeCycle() {
+        func run(_ path: String, _ arguments: [String]) {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: path)
+            process.arguments = arguments
+            try? process.run()
+            process.waitUntilExit()
+        }
+        run("/usr/bin/pmset", ["displaysleepnow"])
+        Thread.sleep(forTimeInterval: 2)
+        run("/usr/bin/caffeinate", ["-u", "-t", "2"])
+        Thread.sleep(forTimeInterval: 3)
+    }
+
+    /// Wraps `targetDisplay` so every new subcommand reports the same way.
+    private static func resolveTarget(_ options: Options) -> DisplayInfo? {
+        do {
+            return try targetDisplay(options)
+        } catch let error as ParseError {
+            writeError(error.message)
+            return nil
+        } catch {
+            writeError("\(error)")
+            return nil
+        }
     }
 
     // MARK: - JSON

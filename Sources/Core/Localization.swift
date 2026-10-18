@@ -81,6 +81,16 @@ public enum L10n {
         "menu.unsupported": "Not supported by this display",
         "menu.autoApplied": "Applied automatically",
 
+        "menu.capabilities": "EDID and refresh limits",
+        "menu.capabilities.link": "Budget: %@",
+        "menu.capabilities.native": "Native timing: %@",
+        "menu.capabilities.hidden": "Declared, not offered: %@",
+        "menu.capabilities.nothingHidden": "Panel declares nothing beyond the listed modes",
+        "menu.capabilities.noEDID": "EDID not readable for this display",
+        "menu.capabilities.override": "Override installed",
+        "menu.capabilities.cliHint": "Beyond-limit rates need the CLI: rdm-arm --custom-timing",
+        "menu.capabilities.inert": "Beyond-limit rates need an EDID override — Apple silicon ignores it, so this machine can only report",
+
         "rotation.0": "Standard (0°)",
         "rotation.90": "90°",
         "rotation.180": "180°",
@@ -122,6 +132,30 @@ public enum L10n {
         "error.rotationUnsupported": "This display does not support rotation",
         "error.brightnessUnsupported": "This display does not support software brightness control",
 
+        "error.timingOptionalDisabled": "The optional module is off — turn it on in Preferences first",
+        "error.timingNoEDID": "Could not read this display's EDID",
+        "error.timingNoNative": "This display reports no native timing to build on",
+        "error.timingGeometry": "The native timing cannot be scaled to %@",
+        "error.timingBudget": "%d Hz is beyond what this link allows (about %d Hz)",
+        "error.timingNoSlot": "The EDID has no free descriptor slot for another timing",
+        "error.timingSyntax": "Expected a timing like 3840x2160@75",
+        "error.timingOverride": "The display override could not be prepared",
+        "error.overrideCancelled": "Cancelled — nothing was changed",
+        "error.overrideFailed": "The display override could not be written",
+        "error.overrideInert": "Apple silicon does not apply /Library display overrides — the file would be written and ignored (measured: cable re-plug, display sleep, system sleep all left the mode list unchanged)",
+
+        "capabilities.link": "link %d MHz",
+        "capabilities.range": "vendor range %@ Hz",
+        "capabilities.max": "vendor max %d Hz",
+        "capabilities.cap": "%d × %d tops out near %d Hz",
+        "capabilities.unknown": "unknown — optional module off",
+
+        "cli.timingDryRun": "    not written — add --write to install, --keep to skip the rollback",
+        "cli.timingDryRunInert": "    not written — --write is ignored on Apple silicon, so this is a calculation only",
+        "cli.timingWatchdog": "    rolling back in %d s unless --keep is given…",
+        "cli.timingKept": "    kept — remove later with --revert",
+        "cli.timingReverted": "%@: display override reverted",
+
         "cli.usage": """
         RDM-ARM — set macOS displays to any resolution they support
 
@@ -131,6 +165,10 @@ public enum L10n {
           rdm-arm -lm                   List every available mode
           rdm-arm -w <n> -h <n> [-s <n>] [-r <n>] [-d <n>]
                                         Switch resolution
+          rdm-arm --edid [-d <n>]       Dump the panel's own description
+          rdm-arm --capabilities        What the hardware allows beyond the list
+          rdm-arm --custom-timing 1920x1080@75 --write
+                                        Try a rate the panel never advertised
 
         OPTIONS
           -w, --width <n>       Width in points
@@ -141,6 +179,16 @@ public enum L10n {
           -d, --display <n>     Display index (default: main display)
           -ld, --displays       List connected displays
           -lm, --modes          List available modes
+              --edid            Dump EDID: timings, link budget, refresh range
+              --capabilities    Summarise hidden rates and the hardware ceiling
+              --custom-timing   Synthesise <width>x<height>@<hz>; add --write to install
+              --write           Install the display override (asks for admin rights)
+              --keep            Keep the override instead of rolling it back
+              --revert          Remove a previously installed override
+              --sleep-wake      Force re-enumeration with a display power cycle
+              --timeout <n>     Seconds before the automatic rollback (default 20)
+              --emit-edid <p>   Write the patched EDID to <p> for inspection
+              --selftest-timing Run the EDID and timing self test, then exit
               --all             Include modes macOS hides from the GUI
               --hidpi           Only consider HiDPI modes
               --json            Machine-readable output
@@ -153,6 +201,8 @@ public enum L10n {
           rdm-arm -w 1920 -h 1080 -s 2
           rdm-arm -lm --json | jq '.displays[].modes | length'
           rdm-arm --rotation 90 -d 1
+          rdm-arm --capabilities -d 1
+          rdm-arm --custom-timing 1920x1080@75 --write --keep -d 1
         """,
 
         "lang.system": "Match system",
@@ -184,6 +234,16 @@ public enum L10n {
         "menu.resetToDefault": "恢复系统默认",
         "menu.unsupported": "此显示器不支持",
         "menu.autoApplied": "已自动应用",
+
+        "menu.capabilities": "EDID 与刷新上限",
+        "menu.capabilities.link": "带宽：%@",
+        "menu.capabilities.native": "原生时序：%@",
+        "menu.capabilities.hidden": "已声明但未提供：%@",
+        "menu.capabilities.nothingHidden": "除已列出的模式外，面板没有声明更多刷新率",
+        "menu.capabilities.noEDID": "读不到此显示器的 EDID",
+        "menu.capabilities.override": "已安装 override",
+        "menu.capabilities.cliHint": "超出上限的刷新率需用命令行：rdm-arm --custom-timing",
+        "menu.capabilities.inert": "超出上限的刷新率需改写 EDID——Apple 芯片不读取该 override，本机只能看不能改",
 
         "rotation.0": "标准 (0°)",
         "rotation.90": "90°",
@@ -226,6 +286,30 @@ public enum L10n {
         "error.rotationUnsupported": "此显示器不支持旋转",
         "error.brightnessUnsupported": "此显示器不支持软件亮度控制",
 
+        "error.timingOptionalDisabled": "可选模块已关闭，请先在偏好设置中打开",
+        "error.timingNoEDID": "读不到此显示器的 EDID",
+        "error.timingNoNative": "此显示器没有可用于推算的原生时序",
+        "error.timingGeometry": "原生时序无法缩放到 %@",
+        "error.timingBudget": "%d Hz 超出链路能力（约 %d Hz）",
+        "error.timingNoSlot": "EDID 里没有空闲的时序描述符槽位",
+        "error.timingSyntax": "格式应为 3840x2160@75",
+        "error.timingOverride": "无法准备显示器 override",
+        "error.overrideCancelled": "已取消，未做任何更改",
+        "error.overrideFailed": "无法写入显示器 override",
+        "error.overrideInert": "Apple 芯片不读取 /Library 显示 override：文件会写进去但被忽略（热插拔、显示器休眠、整机睡眠实测均未改变模式表）",
+
+        "capabilities.link": "链路 %d MHz",
+        "capabilities.range": "厂商范围 %@ Hz",
+        "capabilities.max": "厂商上限 %d Hz",
+        "capabilities.cap": "%d × %d 约 %d Hz 上限",
+        "capabilities.unknown": "未知 —— 可选模块已关闭",
+
+        "cli.timingDryRun": "    未写入 —— 加 --write 生效，加 --keep 跳过自动回滚",
+        "cli.timingDryRunInert": "    未写入 —— Apple 芯片上 --write 会被忽略，这里只是算给你看",
+        "cli.timingWatchdog": "    %d 秒后自动回滚，除非加上 --keep…",
+        "cli.timingKept": "    已保留 —— 之后可用 --revert 移除",
+        "cli.timingReverted": "%@：显示器 override 已回滚",
+
         "cli.usage": """
         RDM-ARM — 将 macOS 显示器设为它支持的任何分辨率
 
@@ -235,6 +319,10 @@ public enum L10n {
           rdm-arm -lm                   列出全部可用模式
           rdm-arm -w <n> -h <n> [-s <n>] [-r <n>] [-d <n>]
                                         切换分辨率
+          rdm-arm --edid [-d <n>]       输出面板自己的描述
+          rdm-arm --capabilities        硬件在系统列表之外还剩多少余量
+          rdm-arm --custom-timing 1920x1080@75 --write
+                                        试一个面板从未声明过的刷新率
 
         选项
           -w, --width <n>       宽度（点）
@@ -245,6 +333,16 @@ public enum L10n {
           -d, --display <n>     显示器索引（默认：主显示器）
           -ld, --displays       列出已连接的显示器
           -lm, --modes          列出可用模式
+              --edid            输出 EDID：时序、带宽、刷新范围
+              --capabilities    汇总隐藏刷新率与硬件上限
+              --custom-timing   合成 <宽>x<高>@<Hz>；加 --write 才会写入
+              --write           写入显示器 override（需要管理员授权）
+              --keep            保留 override，不自动回滚
+              --revert          移除之前安装的 override
+              --sleep-wake      用显示器断电/上电强制重新枚举
+              --timeout <n>     自动回滚前的秒数（默认 20）
+              --emit-edid <p>   把打好补丁的 EDID 写到 <p> 以便检查
+              --selftest-timing 运行 EDID 与时序自检后退出
               --all             包含 macOS 从 GUI 隐藏的模式
               --hidpi           只考虑 HiDPI 模式
               --json            输出机器可读格式
@@ -257,6 +355,8 @@ public enum L10n {
           rdm-arm -w 1920 -h 1080 -s 2
           rdm-arm -lm --json | jq '.displays[].modes | length'
           rdm-arm --rotation 90 -d 1
+          rdm-arm --capabilities -d 1
+          rdm-arm --custom-timing 1920x1080@75 --write --keep -d 1
         """,
 
         "lang.system": "跟随系统",
