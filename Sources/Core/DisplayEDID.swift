@@ -35,20 +35,28 @@ public enum DisplayEDIDReader {
         return blobs.first { candidate.matches($0) } ?? (blobs.count == 1 ? blobs[0] : nil)
     }
 
-    /// Whether anything in the registry publishes a display transport at all.
+    /// Whether any display transport in the registry publishes a parsable EDID.
     ///
     /// A missing EDID has two very different causes, and `read(for:)` returning
-    /// `nil` collapses them: a *virtual* screen (VM, headless runner, screen
-    /// sharing) has no port transport in the registry and therefore no EDID to
-    /// read — an environment, not a fault; a real panel whose port exists but
-    /// whose descriptors did not come back is a genuine failure. Callers that
-    /// report results need to tell those apart, so this exposes the registry
-    /// question separately.
-    public static func hasTransportService() -> Bool {
+    /// `nil` collapses them. A *virtual* screen (VM, headless runner, screen
+    /// sharing) has a transport entry but that transport carries no EDID blob —
+    /// there is nothing to read, and that is an environment, not a fault. When a
+    /// panel is attached, its transport does publish one; if this machine has
+    /// EDIDs in the registry and `read(for:)` still came back empty, the failure
+    /// is ours (matching, parsing, permissions) and deserves to be red.
+    ///
+    /// The distinction is deliberately made on "does anything publish an EDID",
+    /// not on "is there a transport": a GitHub macOS runner has the transport
+    /// class populated but no panel behind it — measured, not assumed.
+    public static func anyTransportPublishesEDID() -> Bool {
         for className in transportClassNames {
-            let found = services(named: className)
-            found.forEach { IOObjectRelease($0) }
-            if !found.isEmpty { return true }
+            for service in services(named: className) {
+                defer { IOObjectRelease(service) }
+                if let data = property(of: service, key: "EDID") as? Data,
+                   EDID(data: data) != nil {
+                    return true
+                }
+            }
         }
         return false
     }
