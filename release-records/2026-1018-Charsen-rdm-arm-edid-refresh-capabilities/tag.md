@@ -1,6 +1,6 @@
 # RDM-ARM 1.1.0 —— EDID 能力分析，自定义刷新率写入被真机否证
 
-状态：**双源已推送**。`origin`（Gitee）与 `github` 的分支、tag 一致；Release 附件**尚未上传**。
+状态：**双源已发布**。`origin`（Gitee）与 `github` 的分支、tag、Release 与附件一致。
 
 ## 起因
 
@@ -112,6 +112,8 @@ $ rdm-arm --custom-timing 3840x2160@65
 | 现场恢复 | `--revert` 后 override 删除，`/Library/.../Overrides` 无残留，模式表回 290 |
 | 本地化 | 中英各 89 键，键集一致；新增键均有引用，无「用了但表里没有」 |
 | zip 内容 | 解包复核：`RDM-ARM.app`（1.1.0，双切片）＋ `安装说明.txt`（版本号已随 1.1.0 更新） |
+| 双源附件 | 两侧各自下载，哈希均与本地一致 |
+| 正式 Release | GitHub 与 Gitee 的 `/releases/latest` 均返回 `1.1.0`，`prerelease=False` |
 
 ### 未验证 / 已知代价
 
@@ -164,6 +166,39 @@ d49d71b  refs/tags/1.1.0     (annotated → 9e4245d)
 
 产物是从 **tag 所在提交** 重新构建的，不是修 tag 之前那一份（旧 zip 的 SHA-256 是
 `562be6d3…`，字节 1 532 455，已作废）。
+
+两端各传一份，`prerelease=false`（正式 Release）：
+
+| 平台 | Release | 附件 |
+| --- | --- | --- |
+| GitHub | https://github.com/charsen/moo-RDM/releases/tag/1.1.0 | ✅ 1 532 395 B |
+| Gitee | https://gitee.com/charsen/moo-RDM/releases/tag/1.1.0 | ✅ 1 532 395 B |
+
+**从两个远端各自下载后**与本地构建产物比对，三者哈希一致（不是只看接口返回值）：
+
+```
+GitHub 下载  bdb770323dc525350208e822cd205911bcbbe3489298568393281d9ac2c4a69f
+Gitee  下载  bdb770323dc525350208e822cd205911bcbbe3489298568393281d9ac2c4a69f
+本地产物     bdb770323dc525350208e822cd205911bcbbe3489298568393281d9ac2c4a69f
+```
+
+下载到的包解压复核：`CFBundleShortVersionString = 1.1.0`，签名 ad-hoc，
+identifier `io.rdmarm.RDM-ARM`。
+
+`/releases/latest` 两端都返回 `1.1.0`（`prerelease=False`）。Gitee 侧照例自动附带源码包
+`1.1.0.zip` / `1.1.0.tar.gz`，是平台行为，不是我们传的——比对哈希时别把它们算进来。
+
+### 上传方式
+
+凭据取自 `/Volumes/dev/git_tokens`（`## gitee_token` / `## github_token`），只在脚本进程内
+读取，不打印、不进命令行参数：
+
+- GitHub：`POST /repos/{owner}/{repo}/releases` → `POST https://uploads.github.com/.../assets`
+- Gitee：`POST /api/v5/repos/{owner}/{repo}/releases`（需要 `access_token`、
+  `target_commitish`、`prerelease`）→ `POST .../releases/{id}/attach_files`（multipart，
+  字段名 `file`）
+
+写成了幂等脚本：先按 tag 查，已存在就复用、附件同名就跳过，重复跑不会造出第二个 Release。
 
 ## 遗留
 
