@@ -24,6 +24,8 @@ public enum CommandLineRunner {
         /// EDID dump and the derived bandwidth/refresh ceilings.
         var showEDID = false
         var showCapabilities = false
+        /// Why a rate is or is not reachable, layer by layer.
+        var refreshAudit = false
         /// "3840x2160@75" — a rate that has to be synthesised, not selected.
         var customTiming: String?
         var writeOverride = false
@@ -92,6 +94,9 @@ public enum CommandLineRunner {
         }
         if options.showCapabilities {
             return showCapabilities(options)
+        }
+        if options.refreshAudit {
+            return runRefreshAudit(options)
         }
         if options.customTiming != nil || options.revertOverride {
             return customTiming(options)
@@ -162,6 +167,8 @@ public enum CommandLineRunner {
                 options.showEDID = true
             case "--capabilities":
                 options.showCapabilities = true
+            case "--refresh-audit":
+                options.refreshAudit = true
             case "--custom-timing":
                 options.customTiming = try value(argument)
             case "--write":
@@ -431,8 +438,7 @@ public enum CommandLineRunner {
         if let timing = report.nativeTiming {
             print("    native timing  \(timing.description)")
         }
-        let budget = report.budgetDescription()
-        print("    budget         \(budget)")
+        print("    budget         \(budgetLine(report))")
 
         if let native = report.nativeFormat
             ?? report.nativeTiming.map({ PixelSize(width: $0.width, height: $0.height) }),
@@ -461,6 +467,176 @@ public enum CommandLineRunner {
             print("    beyond         timing computed, but a display override is ignored on Apple silicon")
         }
         return 0
+    }
+
+    // MARK: - Refresh audit
+
+    /// `--refresh-audit`: why the target rate is or is not reachable.
+    ///
+    /// Gives the narrowest explanation that fits, because the three causes have
+    /// nothing in common: macOS hides a mode the panel declared, the panel never
+    /// declared the rate but the link has room, or the link cannot carry it. Only
+    /// the first two are software problems, and only the first is free.
+    private static func runRefreshAudit(_ options: Options) -> Int32 {
+        guard let display = resolveTarget(options) else { return 1 }
+        let report = DisplayCapabilities.report(for: display.id)
+        guard report.edid != nil else {
+            writeError(L10n.t("error.timingNoEDID"))
+            return 1
+        }
+
+        let audit = report.audit(target: options.refresh)
+        let target = audit.target
+
+        print("Display \(display.ordinal): \(display.name)")
+        if options.refresh == nil {
+            print("    target         \(rateText(target)) Hz — highest rate the panel declares")
+        } else {
+            print("    target         \(rateText(target)) Hz — as requested")
+        }
+        print("    budget         \(budgetLine(report))")
+        if let mode = display.currentMode {
+            print("    current        \(mode.detailedTitle)  ·  \(mode.pixelDescription) px")
+        }
+
+        guard !audit.geometries.isEmpty else {
+            print("    geometry       nothing readable — no modes and no EDID timings")
+            return 1
+        }
+
+        print("")
+        print("    geometry      offered / declared / ceiling")
+        // Rows are not in size order, and a reader who is not told why will read
+        // 720 × 480 appearing above 3360 × 1890 as a bug. It is the panel's own
+        // descriptor outranking a scaling factor.
+        print("    order         native → EDID-declared → area, largest first")
+
+        // Eight rows land exactly at the end of the declared group plus the two
+        // largest scaled geometries on a 4K panel. Going further only admits 4:3
+        // and portrait modes (2688 × 2016, 1920 × 2160) that nobody audits for
+        // refresh rate — measured, not guessed.
+        let visibleGeometries = 8
+        for geometry in audit.geometries.prefix(visibleGeometries) {
+            let verdict = geometry.verdict(for: target)
+            var parts: [String] = []
+            parts.append("offered " + rateList(geometry.offeredRates))
+            parts.append("declared " + rateList(geometry.declaredRates))
+            if let ceiling = geometry.ceiling {
+                parts.append("ceiling \(rateText(ceiling.rounded())) Hz")
+            }
+            parts.append("→ \(rateText(target)) Hz \(verdictLabel(verdict))")
+            print("    \(pad(geometry.pixelDescription, 13)) " + parts.joined(separator: " · "))
+
+            // The trap behind "I picked 1080p and it is still 30 Hz": every HiDPI
+            // point size is rendered then scaled down to the same output timing,
+            // so the bandwidth and the refresh rate do not change with it.
+            let scaled = geometry.pointSizes.filter { $0.scale > 1.01 }
+            if let largest = scaled.first, let smallest = scaled.last {
+                if scaled.count > 1 {
+                    print("      HiDPI   \(smallest.width) × \(smallest.height) … "
+                          + "\(largest.width) × \(largest.height) "
+                          + "(\(scaled.count) point sizes) — all drive this timing")
+                } else {
+                    print("      HiDPI   \(largest.width) × \(largest.height) points"
+                          + " — drives this timing")
+                }
+            }
+        }
+        if audit.geometries.count > visibleGeometries {
+            print("      … \(audit.geometries.count - visibleGeometries) more geometries")
+        }
+
+        print("")
+        if let best = audit.largestReachingTarget {
+            switch best.verdict(for: target) {
+            case .offered:
+                print("    verdict        available now at \(best.pixelDescription)")
+            case .hidden:
+                print("    verdict        the panel declares it, macOS does not list it")
+                if let point = best.pointSizes.first {
+                    print("                   rdm-arm -w \(point.width) -h \(point.height)"
+                          + " -r \(rateText(target))")
+                }
+            case .synthesizable:
+                print("    verdict        within the link budget at \(best.pixelDescription),"
+                      + " but the panel never declared it")
+                print("                   rdm-arm --custom-timing "
+                      + "\(best.width)x\(best.height)@\(rateText(target))")
+                if !DisplayOverrideInstaller.support.isAvailable {
+                    print("                   (computes only — Apple silicon ignores the override)")
+                }
+            case .beyondLink, .unknown:
+                break
+            }
+
+            // The largest geometry that reaches the rate is not necessarily the
+            // one that can be had right now. 75 Hz may need a synthesised timing
+            // at 1920 × 1080 while 640 × 480 already lists it; naming only the
+            // harder route would walk the reader through an administrator
+            // password for something one menu click away.
+            if let ready = audit.offeredAtAnyGeometry,
+               ready.width != best.width || ready.height != best.height {
+                print("                   already offered at \(ready.pixelDescription)")
+            }
+        } else {
+            print("    verdict        no geometry reaches \(rateText(target)) Hz — the link tops out below it")
+            // The native timing is not necessarily the cheapest one, so the
+            // fallback names whichever geometry actually gets closest.
+            let ceilings = audit.geometries.compactMap { geometry in
+                geometry.ceiling.map { (geometry: geometry, ceiling: $0) }
+            }
+            if let best = ceilings.max(by: { $0.ceiling < $1.ceiling }) {
+                print("                   best case \(best.geometry.pixelDescription) at about "
+                      + "\(rateText(best.ceiling.rounded())) Hz")
+            }
+        }
+        return 0
+    }
+
+    /// The same figures as `Report.budgetDescription`, in the CLI's language.
+    ///
+    /// The menu needs the localised version, but a diagnostic table that switches
+    /// from English labels to a Chinese value on the next column is a reading
+    /// problem, and this is the only place that hit it.
+    private static func budgetLine(_ report: DisplayCapabilities.Report) -> String {
+        var parts: [String] = []
+        if let rate = report.linkMaxPixelRate {
+            parts.append(String(format: "link %.0f MHz", Double(rate) / 1_000_000))
+        }
+        if let low = report.minRefreshRate, let high = report.maxRefreshRate {
+            parts.append(String(format: "vendor range %.0f–%.0f Hz", low, high))
+        } else if let high = report.maxRefreshRate {
+            parts.append(String(format: "vendor max %.0f Hz", high))
+        }
+        return parts.isEmpty ? "unreadable — optional module off" : parts.joined(separator: " · ")
+    }
+
+    /// "60" for whole rates, "59.94" otherwise. A report full of 59.940000 is
+    /// harder to read than the number it is trying to convey.
+    private static func rateText(_ rate: Double) -> String {
+        abs(rate - rate.rounded()) < 0.02
+            ? String(Int(rate.rounded()))
+            : String(format: "%.2f", rate)
+    }
+
+    private static func rateList(_ rates: [Double]) -> String {
+        guard !rates.isEmpty else { return "—" }
+        let text = rates.prefix(8).map(rateText).joined(separator: " ")
+        return rates.count > 8 ? text + " …" : text
+    }
+
+    private static func verdictLabel(_ verdict: DisplayCapabilities.RefreshAudit.Verdict) -> String {
+        switch verdict {
+        case .offered:       return "offered"
+        case .hidden:        return "hidden by macOS"
+        case .synthesizable: return "not declared"
+        case .beyondLink:    return "beyond link"
+        case .unknown:       return "unknown"
+        }
+    }
+
+    private static func pad(_ text: String, _ width: Int) -> String {
+        text.count >= width ? text : text + String(repeating: " ", count: width - text.count)
     }
 
     // MARK: - Custom timing

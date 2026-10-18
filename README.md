@@ -115,7 +115,55 @@ RDM-ARM 走第二条，但先把"能不能"算清楚再动手：
 
 - `--edid` 输出面板自己声明的全部时序（基准 DTD + CEA 短格式）
 - `--capabilities` 对三件事：EDID 声明了什么、系统给了什么、链路上限是多少
+- `--refresh-audit` 指定一个刷新率，逐分辨率回答「这根线为什么拿不到」
 - `--custom-timing` 合成时序，不加 `--write` 只算不写
+
+#### 一个刷新率为什么拿不到：三种原因，只有两种能靠软件解决
+
+「显示器之外的刷新率」经常被当成一个笼统的问题，实际有三种成因，修法完全不同：
+
+| 现象 | 判定 | 能不能解决 |
+|---|---|---|
+| 面板在 EDID 里写了，macOS 没列出来 | `hidden by macOS` | 能，直接切（私有模式表已有该档位） |
+| 面板没写，但链路带宽够 | `not declared` | 要合成新时序，Apple 芯片上做不到（见下文） |
+| 链路带宽本来就不够 | `beyond link` | 不能。只能降分辨率或换线 |
+
+`--refresh-audit` 就是对这三层做交叉比对。不指定 `-r` 时，默认审的是「面板声明的最高刷新率」——因为那才是大家真正想问的问题：
+
+```
+$ rdm-arm --refresh-audit
+Display 0: BenQ PD2705U
+    target         60 Hz — highest rate the panel declares
+    budget         link 594 MHz · vendor range 50–76 Hz
+
+    geometry      offered / declared / ceiling
+    order         native → EDID-declared → area, largest first
+    3840 × 2160   offered 60 50 30 25 24 · declared 60 50 29.97 25 24 · ceiling 67 Hz · → 60 Hz offered
+      HiDPI   1600 × 1200 … 3840 × 2160 (9 point sizes) — all drive this timing
+    1920 × 1080   offered 60 50 30 25 24 · declared 59.94 50 29.97 25 24 · ceiling 76 Hz · → 60 Hz offered
+
+    verdict        available now at 3840 × 2160
+```
+
+指定一个够不着的档位，结论会直接点出卡在哪一层：
+
+```
+$ rdm-arm --refresh-audit -r 75
+    verdict        within the link budget at 1920 × 1080, but the panel never declared it
+                   rdm-arm --custom-timing 1920x1080@75
+                   (computes only — Apple silicon ignores the override)
+                   already offered at 640 × 480
+
+$ rdm-arm --refresh-audit -r 120
+    verdict        no geometry reaches 120 Hz — the link tops out below it
+                   best case 1920 × 1080 at about 76 Hz
+```
+
+最后那行 `already offered at 640 × 480` 值得单独说：**「最大能到多高的分辨率」和「现在哪个档位已经能用」是两个问题**。75 Hz 在 1080p 上得合成时序（Apple 芯片还合成不了），而 640 × 480 早就列在系统列表里——只报前者，等于让人白折腾一圈去要管理员密码。
+
+顺带解释一个几乎人人踩过的坑：**「我把分辨率调到 1080p 了，怎么还是 30 Hz」**。因为 HiDPI 的 `pixelWidth` 是显存里的 backing store，不是输出时序——1920 × 1080 的 HiDPI 模式实际是按 3840 × 2160 在输出，带宽也按 4K 算。审计表里每个分辨率下面那行 `HiDPI … — all drive this timing` 就是在说这件事：点尺寸换了，时序没换。
+
+这也顺带说明为什么电视「30 帧 → 60 帧」要分情况看：能变 60 的，是链路本来够、只是描述或分辨率识别被卡住（4K60 8bit 4:2:0 与 4K30 4:4:4 的像素时钟几乎一样，HDMI 1.4 就够）；真变不了的，是面板或链路本身只到 30。至于虚拟屏镜像出来的「60 Hz」，改的是合成器的节奏，面板一秒还是只收到 30 个不同画面。
 
 本机实测（BenQ PD2705U / M4 Max / macOS 27.0.1）：
 
@@ -172,6 +220,8 @@ rdm-arm -w 2304 -h 1296 -s 2 -r 60 # 指定刷新率
 rdm-arm --rotation 90              # 旋转 90°
 rdm-arm --edid                     # 面板自己声明的时序、带宽、刷新范围
 rdm-arm --capabilities             # 隐藏档位 + 硬件天花板
+rdm-arm --refresh-audit            # 某个刷新率为什么拿不到，逐分辨率说明
+rdm-arm --refresh-audit -r 75      # 指定目标刷新率
 rdm-arm --custom-timing 3840x2160@65 --write   # 合成 4K@65 并试写，20 秒自动回滚
 rdm-arm --selftest-timing          # EDID/时序纯逻辑自检，不碰系统
 rdm-arm --selftest                 # GUI 自检：菜单栏图标位置 + 菜单结构
@@ -249,8 +299,13 @@ CI（`.github/workflows/build.yml`）在干净的 macOS runner 上验证通用�
 | **EDID 读取** | IOKit 类匹配 `IOPortTransportStateDisplayPort` | 读通 256 字节，校验和有效，厂商/型号/序号与 CG 一致 | 公开（`CGDisplayIOServicePort` 在 Apple 芯片返回 0，不可用） |
 | **链路预算 / 刷新范围** | `DisplayHints` / `DisplayAttributes` | 594 MHz、50–76 Hz | **私有类名**（可选模块） |
 | **自定义时序** | 改写 `IODisplayEDID` → `/Library/Displays/.../Overrides` | **Apple 芯片：写得进、读不到，`--write` 直接拒绝（退出码 3）**；Intel 可用 | 公开写入路径，无 SIP |
+| **刷新率审计** | 公开模式表 + EDID 声明 + 链路预算三者交叉比对 | 区分「系统藏了 / 面板没写 / 链路不够」，并暴露 HiDPI 的点尺寸≠输出时序 | 公开 |
 
-新增的三块都遵守同一条边界：EDID 解析与时序计算在 `Core/`（纯数据、无副作用），Apple 私有类名的属性读取和 override 写入在 `Optional/`。
+新增的几块都遵守同一条边界：EDID 解析、时序计算、审计判定在 `Core/`（纯数据、无副作用），Apple 私有类名的属性读取和 override 写入在 `Optional/`。
+
+override 能不能用，按**硬件**判定（`sysctlbyname("hw.optional.arm64")`），不是编译期 `#if arch(arm64)`：universal 包的 x86_64 slice 在 Apple 芯片上经 Rosetta 运行时，编译期判断会以为自己在 Intel 上，进而放开一条写了也不被读取的路径——那一步会先要管理员密码。硬件属性从哪个 slice 读都一样。
+
+**关于审计的可信度**：判定逻辑有 12 条断言覆盖（`--selftest-timing` 现在共 30 条全 PASS）。四种成因各钉一条——因为它们的修法完全不同，"看起来合理"是不够的；4 条钉住「最大可达几何」与「已经可用的几何」必须是两个独立答案；1 条钉住 59.94 与 60 必须算同一个答案。每条都做过 mutation 验证（把实现改坏，确认对应断言真的会 FAIL）。
 
 **关于旋转**：`SLSSetDisplayRotation` 是私有符号，但它是**运行时动态解析**的，签名经实测确认为 `SLSSetDisplayRotation(CGDirectDisplayID, uint32_t)`（两参数形式返回成功，三参数形式返回失败）。如果将来这个符号消失，旋转菜单会**自动隐藏**，其余功能不受影响——不会崩溃。
 

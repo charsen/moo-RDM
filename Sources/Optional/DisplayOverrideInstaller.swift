@@ -1,4 +1,5 @@
 import CoreGraphics
+import Darwin
 import Foundation
 
 /// Installs and removes a display override — the only mechanism on Apple silicon
@@ -50,15 +51,27 @@ enum DisplayOverrideInstaller {
         var isAvailable: Bool { self == .available }
     }
 
+    /// Whether this *machine* is Apple silicon — which is not the same question
+    /// as whether this *slice* of the universal binary is arm64.
+    ///
+    /// `#if arch(arm64)` only answers the second. The x86_64 slice running under
+    /// Rosetta on an M-series Mac would answer "no", conclude it was on Intel,
+    /// and re-enable the write path: ask for an administrator password, install
+    /// an override, and report success for something the display pipeline then
+    /// ignores. `hw.optional.arm64` is a hardware property, so it reads the same
+    /// from either slice; on an Intel Mac the key does not exist at all.
+    private static var isAppleSiliconHost: Bool {
+        var value: Int32 = 0
+        var size = MemoryLayout<Int32>.size
+        guard sysctlbyname("hw.optional.arm64", &value, &size, nil, 0) == 0 else { return false }
+        return value == 1
+    }
+
     static var support: Support {
-        #if arch(arm64)
         if ProcessInfo.processInfo.environment["RDM_ALLOW_EDID_OVERRIDE"] == "1" {
             return .available
         }
-        return .inertOnAppleSilicon
-        #else
-        return .available
-        #endif
+        return isAppleSiliconHost ? .inertOnAppleSilicon : .available
     }
 
     // MARK: - Paths

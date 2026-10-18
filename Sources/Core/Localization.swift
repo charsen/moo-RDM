@@ -167,6 +167,8 @@ public enum L10n {
                                         Switch resolution
           rdm-arm --edid [-d <n>]       Dump the panel's own description
           rdm-arm --capabilities        What the hardware allows beyond the list
+          rdm-arm --refresh-audit [-r <n>]
+                                        Why a rate is or is not reachable
           rdm-arm --custom-timing 1920x1080@75 --write
                                         Try a rate the panel never advertised
 
@@ -181,6 +183,7 @@ public enum L10n {
           -lm, --modes          List available modes
               --edid            Dump EDID: timings, link budget, refresh range
               --capabilities    Summarise hidden rates and the hardware ceiling
+              --refresh-audit   Explain gaps between declared, offered and possible rates
               --custom-timing   Synthesise <width>x<height>@<hz>; add --write to install
               --write           Install the display override (asks for admin rights)
               --keep            Keep the override instead of rolling it back
@@ -202,6 +205,7 @@ public enum L10n {
           rdm-arm -lm --json | jq '.displays[].modes | length'
           rdm-arm --rotation 90 -d 1
           rdm-arm --capabilities -d 1
+          rdm-arm --refresh-audit -r 60 -d 1
           rdm-arm --custom-timing 1920x1080@75 --write --keep -d 1
         """,
 
@@ -321,6 +325,8 @@ public enum L10n {
                                         切换分辨率
           rdm-arm --edid [-d <n>]       输出面板自己的描述
           rdm-arm --capabilities        硬件在系统列表之外还剩多少余量
+          rdm-arm --refresh-audit [-r <n>]
+                                        某个刷新率为什么拿不到
           rdm-arm --custom-timing 1920x1080@75 --write
                                         试一个面板从未声明过的刷新率
 
@@ -335,6 +341,7 @@ public enum L10n {
           -lm, --modes          列出可用模式
               --edid            输出 EDID：时序、带宽、刷新范围
               --capabilities    汇总隐藏刷新率与硬件上限
+              --refresh-audit   逐分辨率说明「声明 / 系统给出 / 链路可行」的差距
               --custom-timing   合成 <宽>x<高>@<Hz>；加 --write 才会写入
               --write           写入显示器 override（需要管理员授权）
               --keep            保留 override，不自动回滚
@@ -356,6 +363,7 @@ public enum L10n {
           rdm-arm -lm --json | jq '.displays[].modes | length'
           rdm-arm --rotation 90 -d 1
           rdm-arm --capabilities -d 1
+          rdm-arm --refresh-audit -r 60 -d 1
           rdm-arm --custom-timing 1920x1080@75 --write --keep -d 1
         """,
 

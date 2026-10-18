@@ -24,6 +24,11 @@ public enum DisplayCapabilities {
         public let maxRefreshRate: Double?
         public let minRefreshRate: Double?
         public let nativeFormat: PixelSize?
+        /// Every mode CoreGraphics currently vends for this display, including
+        /// the private-table ones when that module is enabled. Kept because the
+        /// audit has to compare three layers against each other and the mode
+        /// list is the middle one.
+        public let offeredModes: [DisplayMode]
 
         /// Highest refresh rate the hardware could plausibly take at a geometry.
         ///
@@ -71,6 +76,223 @@ public enum DisplayCapabilities {
                 ? L10n.t("capabilities.unknown")
                 : parts.joined(separator: " · ")
         }
+
+        // MARK: - Refresh audit
+
+        /// Answers "can this display do *n* Hz, and at which geometry" by
+        /// cross-referencing the three layers that actually decide it: what the
+        /// panel declares in its EDID, what macOS is currently willing to list,
+        /// and what the link's pixel-rate budget would carry.
+        ///
+        /// The runtime is the one that matters. A rate can be missing for three
+        /// very different reasons, and only one of them is fixable from software:
+        /// macOS hides a mode the panel declared, the panel never declared it but
+        /// the link has room, or the link simply cannot carry it.
+        ///
+        /// - Parameter target: Rate to audit. Defaults to the highest rate the
+        ///   panel declares, which is both the question people actually ask and a
+        ///   stable one — it does not drift with whatever mode is current.
+        public func audit(target: Double? = nil) -> RefreshAudit {
+            let declared = edid?.declaredRates ?? []
+            let resolvedTarget = target
+                ?? declared.map(\.refreshRate).max()
+                ?? maxRefreshRate
+                ?? 60
+
+            var sizes: [String: (width: Int, height: Int)] = [:]
+            var points: [String: Set<RefreshAudit.PointSize>] = [:]
+            var offered: [String: Set<Double>] = [:]
+            var declaredRates: [String: Set<Double>] = [:]
+            var order: [String] = []
+
+            /// The geometry the panel is actually driven at, which is what the
+            /// link budget applies to. Falls back to the EDID's preferred timing
+            /// when the private module did not publish the native format.
+            let nativeGeometry: (width: Int, height: Int)? = nativeFormat.map {
+                (width: $0.width, height: $0.height)
+            } ?? nativeTiming.map { (width: $0.width, height: $0.height) }
+
+            func register(_ width: Int, _ height: Int) -> String {
+                let key = "\(width)x\(height)"
+                if sizes[key] == nil {
+                    sizes[key] = (width, height)
+                    order.append(key)
+                }
+                return key
+            }
+
+            for mode in offeredModes where mode.refreshRate > 0 {
+                // `pixelWidth` is a backing store, and it equals the output timing
+                // only while the panel can actually carry it. Anything larger
+                // (4608 × 2592 on a 4K panel) is downscaled to the native timing,
+                // so treating the backing store as the link geometry would invent
+                // 8K timings and contradict the rate being offered.
+                let output: (width: Int, height: Int)
+                if let nativeGeometry,
+                   mode.pixelWidth > nativeGeometry.width || mode.pixelHeight > nativeGeometry.height {
+                    output = nativeGeometry
+                } else {
+                    output = (mode.pixelWidth, mode.pixelHeight)
+                }
+                let key = register(output.width, output.height)
+                points[key, default: []].insert(
+                    RefreshAudit.PointSize(width: mode.width, height: mode.height, scale: mode.scale))
+                // Two decimals: CoreGraphics reports 59.999999 for a 60 Hz mode
+                // and listing that noise would defeat the whole report.
+                offered[key, default: []].insert((mode.refreshRate * 100).rounded() / 100)
+            }
+            for rate in declared {
+                let key = register(rate.width, rate.height)
+                declaredRates[key, default: []].insert((rate.refreshRate * 100).rounded() / 100)
+            }
+
+            // 59.94 and 60 are one choice on a 60 Hz panel, and so are the
+            // 1000/1001 variants of every other rate. Collapsing them keeps the
+            // row readable without hiding anything a user could select.
+            func collapse(_ rates: Set<Double>) -> [Double] {
+                var kept: [Double] = []
+                for rate in rates.sorted(by: >)
+                where !kept.contains(where: { abs($0 - rate) < 0.3 }) {
+                    kept.append(rate)
+                }
+                return kept
+            }
+
+            let geometries: [RefreshAudit.Geometry] = order
+                .compactMap { key -> RefreshAudit.Geometry? in
+                    guard let size = sizes[key] else { return nil }
+                    let pointSizes = (points[key] ?? []).sorted { a, b in
+                        if a.width != b.width { return a.width > b.width }
+                        return a.scale > b.scale
+                    }
+                    return RefreshAudit.Geometry(
+                        width: size.width,
+                        height: size.height,
+                        pointSizes: pointSizes,
+                        offeredRates: collapse(offered[key] ?? []),
+                        declaredRates: collapse(declaredRates[key] ?? []),
+                        ceiling: estimatedMaximumRefresh(width: size.width, height: size.height))
+                }
+                .sorted { a, b in
+                    // Native first, then geometries the panel actually declares,
+                    // then by area.
+                    //
+                    // Sorting by area alone was tried and is worse: on a 4K panel
+                    // it fills the top of the table with 4:3 and portrait
+                    // geometries (2688 × 2016, 1920 × 2160) and pushes 1920 × 1080
+                    // past the tenth row, because scaled point sizes have more
+                    // pixels than 1080p does. "Declared" is the one ordering
+                    // signal that comes from the panel's own descriptor rather
+                    // than from a scaling factor, so it earns the higher rank.
+                    let aIsNative = a.width == nativeGeometry?.width && a.height == nativeGeometry?.height
+                    let bIsNative = b.width == nativeGeometry?.width && b.height == nativeGeometry?.height
+                    if aIsNative != bIsNative { return aIsNative }
+
+                    let aDeclared = !a.declaredRates.isEmpty
+                    let bDeclared = !b.declaredRates.isEmpty
+                    if aDeclared != bDeclared { return aDeclared }
+
+                    let areaA = a.width * a.height
+                    let areaB = b.width * b.height
+                    if areaA != areaB { return areaA > areaB }
+                    return a.width > b.width
+                }
+
+            return RefreshAudit(target: resolvedTarget, geometries: geometries)
+        }
+    }
+
+    // MARK: - Refresh audit
+
+    /// The result of `Report.audit(target:)`: one row per pixel geometry, each
+    /// carrying what the panel declared, what macOS lists, and the link ceiling.
+    public struct RefreshAudit {
+
+        /// Why the target rate is or is not available at one geometry.
+        ///
+        /// Ordered by how much software can do about it: `offered` needs nothing,
+        /// `hidden` needs a mode switch, `synthesizable` needs a timing the panel
+        /// never declared, `beyondLink` needs different hardware or a smaller
+        /// geometry.
+        public enum Verdict: String, Sendable {
+            case offered
+            case hidden
+            case synthesizable
+            case beyondLink
+            case unknown
+        }
+
+        /// A logical size that renders into a given pixel geometry.
+        public struct PointSize: Hashable, Sendable {
+            public let width: Int
+            public let height: Int
+            public let scale: Double
+
+            public var description: String {
+                let suffix = scale > 1.01 ? String(format: " (%.0f×)", scale) : ""
+                return "\(width) × \(height)\(suffix)"
+            }
+        }
+
+        public struct Geometry {
+            public let width: Int
+            public let height: Int
+            public let pointSizes: [PointSize]
+            /// Rates macOS lists at this pixel geometry, descending.
+            public let offeredRates: [Double]
+            /// Rates the panel declares at this pixel geometry, descending.
+            public let declaredRates: [Double]
+            /// Estimated link/vendor ceiling, `nil` when not readable.
+            public let ceiling: Double?
+
+            public var pixelDescription: String { "\(width) × \(height)" }
+
+            public func verdict(for target: Double, tolerance: Double = 0.5) -> Verdict {
+                if offeredRates.contains(where: { abs($0 - target) <= tolerance }) {
+                    return .offered
+                }
+                if declaredRates.contains(where: { abs($0 - target) <= tolerance }) {
+                    return .hidden
+                }
+                guard let ceiling else { return .unknown }
+                return target <= ceiling + tolerance ? .synthesizable : .beyondLink
+            }
+        }
+
+        public let target: Double
+        /// Native geometry first (when known), then descending area — so
+        /// `largestReachingTarget` finds a large geometry without sorting, and a
+        /// reader sees the biggest answers first.
+        public let geometries: [Geometry]
+
+        /// The largest geometry that can plausibly show the target: already
+        /// listed, unlockable from the private table, or synthesised within the
+        /// budget. `nil` means no geometry reaches it and the limit is the link
+        /// itself.
+        ///
+        /// "Largest" here means largest area, which is what the row order
+        /// guarantees — but not necessarily the *only* one that works. A smaller
+        /// geometry may already be listed while this one has to be synthesised,
+        /// which is why the CLI also reports `offeredAtAnyGeometry`.
+        public var largestReachingTarget: Geometry? {
+            geometries.first { geometry in
+                let verdict = geometry.verdict(for: target)
+                return verdict != .beyondLink && verdict != .unknown
+            }
+        }
+
+        /// The largest geometry where the target rate is already selectable.
+        ///
+        /// Kept separate from `largestReachingTarget`, which answers a different
+        /// question: the biggest geometry that *could* reach the rate, possibly
+        /// only after a mode-table switch or a synthesised timing. When a smaller
+        /// geometry is already listed, that is the zero-work answer, and offering
+        /// only the harder route would be advice that costs the reader an hour.
+        public var offeredAtAnyGeometry: Geometry? {
+            geometries.first { $0.verdict(for: target) == .offered }
+        }
+
+        public var isTargetReachable: Bool { largestReachingTarget != nil }
     }
 
     // MARK: - Assembly
@@ -100,7 +322,8 @@ public enum DisplayCapabilities {
                       let height = (attributes?["NativeFormatVerticalPixels"] as? NSNumber)?.intValue,
                       width > 0, height > 0 else { return nil }
                 return PixelSize(width: width, height: height)
-            }()
+            }(),
+            offeredModes: modes
         )
     }
 
