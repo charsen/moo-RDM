@@ -556,10 +556,27 @@ public enum CommandLineRunner {
         }
 
         print("")
-        if let best = audit.largestReachingTarget {
+        // The headline is the zero-work answer whenever there is one. The row
+        // order ranks the native geometry and the panel's declared timings above
+        // size, so the best-supported row can easily be one that needs a
+        // synthesised timing while a 2048 × 1536 mode further down already lists
+        // the rate. Leading with the harder route would send someone off for an
+        // administrator password to reach something one menu click away.
+        let ready = audit.offeredAtAnyGeometry
+        let best = audit.recommendedGeometry
+
+        if let ready {
+            print("    verdict        available now at \(ready.pixelDescription)")
+            if let best, best.width != ready.width || best.height != ready.height,
+               best.verdict(for: target) == .hidden {
+                // Worth one line: the panel declares the rate at a larger
+                // geometry that macOS merely hides, which is a mode switch and
+                // not a rewrite.
+                print("                   also declared at \(best.pixelDescription)"
+                      + " — macOS just does not list it")
+            }
+        } else if let best {
             switch best.verdict(for: target) {
-            case .offered:
-                print("    verdict        available now at \(best.pixelDescription)")
             case .hidden:
                 print("    verdict        the panel declares it, macOS does not list it")
                 if let point = best.pointSizes.first {
@@ -577,29 +594,32 @@ public enum CommandLineRunner {
                 if !DisplayOverrideInstaller.support.isAvailable {
                     print("                   (computes only — Apple silicon ignores the override)")
                 }
-            case .beyondLink, .unknown:
+            case .offered, .beyondLink, .unknown:
+                // An offered row cannot arrive here: `offeredAtAnyGeometry` above
+                // would have found it. The other two are not recommendations.
                 break
             }
-
-            // The largest geometry that reaches the rate is not necessarily the
-            // one that can be had right now. 75 Hz may need a synthesised timing
-            // at 1920 × 1080 while 640 × 480 already lists it; naming only the
-            // harder route would walk the reader through an administrator
-            // password for something one menu click away.
-            if let ready = audit.offeredAtAnyGeometry,
-               ready.width != best.width || ready.height != best.height {
-                print("                   already offered at \(ready.pixelDescription)")
-            }
         } else {
-            print("    verdict        no geometry reaches \(rateText(target)) Hz — the link tops out below it")
-            // The native timing is not necessarily the cheapest one, so the
-            // fallback names whichever geometry actually gets closest.
-            let ceilings = audit.geometries.compactMap { geometry in
-                geometry.ceiling.map { (geometry: geometry, ceiling: $0) }
-            }
-            if let best = ceilings.max(by: { $0.ceiling < $1.ceiling }) {
-                print("                   best case \(best.geometry.pixelDescription) at about "
-                      + "\(rateText(best.ceiling.rounded())) Hz")
+            // "No row reaches it" and "no row could be judged" look identical in
+            // the table — both are a wall of `unknown` — but only one of them is a
+            // measurement. Saying the link tops out when nothing published a
+            // budget would be inventing the number that answers the question.
+            if audit.isUndetermined {
+                print("    verdict        no link budget to compare against — cannot tell")
+                print("                   the budget comes from the panel's own attributes;"
+                      + " this one publishes none")
+            } else {
+                print("    verdict        no geometry reaches \(rateText(target)) Hz"
+                      + " — the link tops out below it")
+                // The native timing is not necessarily the cheapest one, so the
+                // fallback names whichever geometry actually gets closest.
+                let ceilings = audit.geometries.compactMap { geometry in
+                    geometry.ceiling.map { (geometry: geometry, ceiling: $0) }
+                }
+                if let best = ceilings.max(by: { $0.ceiling < $1.ceiling }) {
+                    print("                   best case \(best.geometry.pixelDescription) at about "
+                          + "\(rateText(best.ceiling.rounded())) Hz")
+                }
             }
         }
         return 0

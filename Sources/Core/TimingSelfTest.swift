@@ -144,7 +144,7 @@ enum TimingSelfTest {
             target: 60,
             geometries: [geometry(offered: [30], declared: [30], ceiling: 30),
                          geometry(offered: [60], declared: [60], ceiling: 67)])
-        check(mixed.largestReachingTarget?.ceiling == 67,
+        check(mixed.recommendedGeometry?.ceiling == 67,
               "audit: the verdict skips geometries the link cannot carry")
 
         // 8. The largest geometry that reaches a rate and the largest geometry
@@ -157,7 +157,7 @@ enum TimingSelfTest {
         let twoWay = DisplayCapabilities.RefreshAudit(
             target: 75,
             geometries: [geometry(offered: [60], declared: [60], ceiling: 76), ready])
-        check(twoWay.largestReachingTarget?.width == 3840,
+        check(twoWay.recommendedGeometry?.width == 3840,
               "audit: the largest reachable geometry decides the verdict")
         check(twoWay.offeredAtAnyGeometry?.width == 640,
               "audit: an already-listed smaller geometry is reported separately")

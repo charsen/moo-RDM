@@ -260,21 +260,24 @@ public enum DisplayCapabilities {
         }
 
         public let target: Double
-        /// Native geometry first (when known), then descending area — so
-        /// `largestReachingTarget` finds a large geometry without sorting, and a
-        /// reader sees the biggest answers first.
+        /// Row order: the native geometry first, then geometries the panel
+        /// declares, then descending area. An ordering by how well the panel
+        /// supports a row, not by size — `recommendedGeometry` explains why that
+        /// is the useful one, and `offeredAtAnyGeometry` is where the exception
+        /// lives.
         public let geometries: [Geometry]
 
-        /// The largest geometry that can plausibly show the target: already
-        /// listed, unlockable from the private table, or synthesised within the
-        /// budget. `nil` means no geometry reaches it and the limit is the link
-        /// itself.
+        /// The best-supported geometry that reaches the target: already listed,
+        /// unlockable from the private table, or synthesised within the budget.
+        /// `nil` means no row reaches it — or that no row could be judged at all;
+        /// `isUndetermined` tells those two apart.
         ///
-        /// "Largest" here means largest area, which is what the row order
-        /// guarantees — but not necessarily the *only* one that works. A smaller
-        /// geometry may already be listed while this one has to be synthesised,
-        /// which is why the CLI also reports `offeredAtAnyGeometry`.
-        public var largestReachingTarget: Geometry? {
+        /// "Best-supported" is the row order, not the largest area — a row the
+        /// panel itself declares outranks a scaled point size, so a synthesised
+        /// 3360 × 1890 (a 4K desktop mode, not something anyone picks) does not
+        /// beat a declared 1920 × 1080. For the zero-work answer at the largest
+        /// selectable geometry, see `offeredAtAnyGeometry`.
+        public var recommendedGeometry: Geometry? {
             geometries.first { geometry in
                 let verdict = geometry.verdict(for: target)
                 return verdict != .beyondLink && verdict != .unknown
@@ -283,16 +286,34 @@ public enum DisplayCapabilities {
 
         /// The largest geometry where the target rate is already selectable.
         ///
-        /// Kept separate from `largestReachingTarget`, which answers a different
-        /// question: the biggest geometry that *could* reach the rate, possibly
-        /// only after a mode-table switch or a synthesised timing. When a smaller
-        /// geometry is already listed, that is the zero-work answer, and offering
-        /// only the harder route would be advice that costs the reader an hour.
+        /// Kept separate from `recommendedGeometry`, which answers a different
+        /// question: the best-supported geometry that *could* reach the rate,
+        /// possibly only after a mode-table switch or a synthesised timing.
+        ///
+        /// This one takes the largest area among the offered rows rather than the
+        /// first row in the table. Table order ranks native and panel-declared
+        /// geometries above size, so the first offered row is often a 640 × 480
+        /// mode sitting near the top — true, but not the answer anyone wants when
+        /// a 2048 × 1536 mode further down already lists the same rate.
         public var offeredAtAnyGeometry: Geometry? {
-            geometries.first { $0.verdict(for: target) == .offered }
+            geometries
+                .filter { $0.verdict(for: target) == .offered }
+                .max { $0.width * $0.height < $1.width * $1.height }
         }
 
-        public var isTargetReachable: Bool { largestReachingTarget != nil }
+        public var isTargetReachable: Bool { recommendedGeometry != nil }
+
+        /// True when not one row could be judged, because no geometry published a
+        /// link budget.
+        ///
+        /// This is a different answer from "unreachable", and conflating the two
+        /// would claim a measurement that was never taken: the honest report is
+        /// "cannot tell". `unknown` exists per row precisely to prevent that, so
+        /// the report as a whole needs the same distinction.
+        public var isUndetermined: Bool {
+            !geometries.isEmpty
+                && geometries.allSatisfy { $0.verdict(for: target) == .unknown }
+        }
     }
 
     // MARK: - Assembly
