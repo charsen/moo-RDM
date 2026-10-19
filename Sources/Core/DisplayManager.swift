@@ -162,7 +162,17 @@ public enum DisplayManager {
             if !includeUnusable && !mode.isUsable { continue }
             modes.append(mode)
         }
-        modes.append(contentsOf: hiddenModes(for: displayID, known: modes))
+        // The private table is fiction unless asked for. It is not filtered by
+        // `isUsableForDesktopGUI` — those records never went through CoreGraphics,
+        // so they carry no usability verdict at all, and the ones it lists are
+        // exactly the "hidden" modes the preference is named after. Appending
+        // them unconditionally put rows in the menu that could not be applied
+        // (CoreGraphics error 1001, e.g. a 60 Hz HiDPI size the link only
+        // carries at 30); whoever wants those turns the switch on and accepts
+        // the risk that comes with them.
+        if includeUnusable {
+            modes.append(contentsOf: hiddenModes(for: displayID, known: modes))
+        }
         return modes
     }
 
