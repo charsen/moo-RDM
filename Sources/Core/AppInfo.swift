@@ -5,7 +5,7 @@ public enum AppInfo {
 
     public static let name = "RDM-ARM"
 
-    public static let version = "1.2.0"
+    public static let version = "1.2.1"
 
     public static let build = "1"
 
