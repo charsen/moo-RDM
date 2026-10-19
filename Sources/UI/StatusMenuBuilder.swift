@@ -83,12 +83,17 @@ enum StatusMenuBuilder {
     // rates took four lines — and changing only the rate meant a submenu hop.
     // Now the geometry lives here and the rate lives next door.
 
-    /// The modes the menu is allowed to show, after both view filters.
-    private static func visibleModes(for display: DisplayInfo) -> [DisplayMode] {
-        var modes = DisplayManager.allModes(for: display.id,
-                                            includeUnusable: Preferences.shared.showUnusableModes)
-        if Preferences.shared.hiDPIOnly { modes = modes.filter(\.isHiDPI) }
-        return modes
+    /// Every mode the display reports, after the "show unusable" filter only.
+    ///
+    /// Read once per menu build: the mode table is not stable across a switch.
+    /// A panel driven at 30 Hz and the same panel driven at 60 Hz return
+    /// different tables — the 60 Hz HiDPI rows simply are not there while the
+    /// link runs at 30 — so anything derived from "which standard mode is
+    /// faster" changes shape under the user's feet. Callers that need the table
+    /// twice share this result instead of re-reading it.
+    private static func allModes(for display: DisplayInfo) -> [DisplayMode] {
+        DisplayManager.allModes(for: display.id,
+                                includeUnusable: Preferences.shared.showUnusableModes)
     }
 
     private static func resolutionsItem(for display: DisplayInfo,
@@ -97,9 +102,24 @@ enum StatusMenuBuilder {
         let submenu = NSMenu()
 
         let current = display.currentMode
+        let isFiltering = Preferences.shared.hiDPIOnly
+        let all = allModes(for: display)
         // macOS returns many modes that are indistinguishable in the menu; collapse
         // them before grouping so each geometry appears exactly once.
-        let groups = visibleModes(for: display)
+        let rows = isFiltering ? all.filter(\.isHiDPI) : all
+        let groups = rows
+            .sortedForMenu()
+            .deduplicated(preferring: current)
+            .groupedByResolution()
+
+        // The 1× list is unconditional. It used to be built from whatever
+        // survived the HiDPI filter on speed, which made the whole submenu
+        // appear and vanish as the mode table changed — pick a 60 Hz timing and
+        // the 1× rows start tying with their HiDPI twins, so the group the user
+        // had just found was gone. Whether these rows are "faster" is a property
+        // of the current timing, not of the display; membership should not
+        // depend on it.
+        let standardGroups = (isFiltering ? all.filter { !$0.isHiDPI } : [])
             .sortedForMenu()
             .deduplicated(preferring: current)
             .groupedByResolution()
@@ -109,23 +129,49 @@ enum StatusMenuBuilder {
         }
 
         for group in groups {
-            // Keep the rate the user is already on whenever the new geometry
-            // supports it, so picking a resolution does not quietly change the
-            // refresh rate as well.
-            let target = group.refreshRates.first { rate in
-                guard let current, current.refreshRate > 0 else { return false }
-                return abs(rate.refreshRate - current.refreshRate) < 0.5
-            } ?? group.mode
+            submenu.addItem(modeItem(for: group, current: current, router: router))
+        }
 
-            let item = action(group.mode.menuTitle,
-                              #selector(MenuActionRouter.selectMode(_:)), router)
-            item.representedObject = ModeBox(target)
-            item.state = group.mode.resolutionKey == current?.resolutionKey ? .on : .off
-            submenu.addItem(item)
+        if !standardGroups.isEmpty {
+            submenu.addItem(.separator())
+            let header = NSMenuItem(title: L10n.t("menu.standardResolutions"),
+                                    action: nil, keyEquivalent: "")
+            let child = NSMenu()
+            for group in standardGroups {
+                child.addItem(modeItem(for: group, current: current, router: router))
+            }
+            header.submenu = child
+            // The tick belongs on the submenu itself: while the display sits in a
+            // 1× mode no row above is current, and a list with no tick reads as
+            // if it had lost track of the display.
+            header.state = (current?.isHiDPI == false) ? .on : .off
+            submenu.addItem(header)
         }
 
         parent.submenu = submenu
         return parent
+    }
+
+    /// One resolution row, including where a click should land.
+    private static func modeItem(for group: (mode: DisplayMode, refreshRates: [DisplayMode]),
+                                 current: DisplayMode?,
+                                 router: MenuActionRouter) -> NSMenuItem {
+        // The row prints the group's fastest rate, so the click has to deliver
+        // it. Keeping the current rate instead would have the label promise
+        // `· 60 Hz` and land on 30 whenever the current rate also exists at the
+        // new size — technically gentle, but it makes the number on the row a
+        // lie. The geometry and its best timing are one choice.
+        let fastest = group.refreshRates.max { $0.refreshRate < $1.refreshRate } ?? group.mode
+
+        // See the comment on `menuTitle(withFastestRate:)`: two sibling menus
+        // mean a resolution can be picked without the rate ever being in view,
+        // and that is how a user ends up on a 30 Hz HiDPI size while believing
+        // the panel cannot do 60.
+        let item = action(group.mode.menuTitle(withFastestRate: fastest.refreshRate),
+                          #selector(MenuActionRouter.selectMode(_:)), router)
+        item.representedObject = ModeBox(fastest)
+        item.state = group.mode.resolutionKey == current?.resolutionKey ? .on : .off
+        return item
     }
 
     /// Refresh rates available *at the resolution currently in use*.
@@ -141,8 +187,11 @@ enum StatusMenuBuilder {
                                         router: MenuActionRouter) -> NSMenuItem? {
         guard let current = display.currentMode else { return nil }
 
-        let rates = visibleModes(for: display)
-            .deduplicated(preferring: current)
+        // The unfiltered table: the HiDPI filter only decides which list a row
+        // goes into, and the user sitting in a 1× mode still needs the rates of
+        // the geometry they are actually on.
+        let modes = allModes(for: display).deduplicated(preferring: current)
+        let rates = modes
             .filter { $0.resolutionKey == current.resolutionKey }
             .sorted { $0.refreshRate > $1.refreshRate }
 
@@ -160,6 +209,45 @@ enum StatusMenuBuilder {
                               #selector(MenuActionRouter.selectMode(_:)), router)
             item.representedObject = ModeBox(rate)
             item.state = rate.isSame(as: current) ? .on : .off
+            submenu.addItem(item)
+        }
+
+        // A higher rate can be one geometry away and still be invisible here.
+        // On this TV the link carries 60 Hz only in the 1× 1080p timing while
+        // every HiDPI size stops at 30, so a user sitting at 1600 × 900 sees a
+        // three-row menu and concludes the panel cannot do 60.
+        //
+        // This is a clickable row, not a note: "60 Hz is not offered" is the
+        // exact complaint that led here, and an entry the user cannot press
+        // would answer it with an explanation instead of a fix. It carries the
+        // geometry because choosing it changes the resolution too — the rate and
+        // the timing travel together, and hiding that would be a surprise.
+        //
+        // Only geometries at least as large qualify. Trading 2304 × 1296 for a
+        // 75 Hz 1024 × 768 is not "the same screen, faster"; that rate stays in
+        // the standard-resolution submenu without shouting from here.
+        let fastestHere = rates.map(\.refreshRate).max() ?? 0
+        let faster = modes
+            .filter { mode in
+                mode.resolutionKey != current.resolutionKey
+                    && mode.refreshRate > fastestHere + 0.5
+                    && mode.width * mode.height >= current.width * current.height
+            }
+            .sorted { a, b in
+                if abs(a.refreshRate - b.refreshRate) > 0.5 {
+                    return a.refreshRate > b.refreshRate
+                }
+                return a.width * a.height > b.width * b.height
+            }
+            .first
+
+        if let faster {
+            submenu.addItem(.separator())
+            let item = action(L10n.t("menu.refreshAtGeometry",
+                                     faster.refreshDescription, faster.menuTitle),
+                              #selector(MenuActionRouter.selectMode(_:)), router)
+            item.representedObject = ModeBox(faster)
+            item.state = .off
             submenu.addItem(item)
         }
 

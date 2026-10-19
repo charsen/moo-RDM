@@ -208,10 +208,11 @@ enum GUISelfTest {
         let mark = item.state == .on ? "[x] " : (item.isEnabled ? "    " : "-   ")
         let key = item.keyEquivalent.isEmpty ? "" : "  (⌘\(item.keyEquivalent))"
 
-        // Resolution entries deliberately omit the refresh rate from their label,
-        // because the rate has its own menu now. Printing the payload is the only
-        // way to check that each entry really carries the rate it should — for
-        // instance that picking a resolution keeps the rate you are already on.
+        // The resolution rows carry a refresh rate in their label, but that is
+        // the *fastest* the group offers, not necessarily where the row lands.
+        // Printing the payload is the only way to prove the two agree — a row
+        // that says `· 60 Hz` and clicks through to 30 would still look right in
+        // the dump without this.
         var detail = ""
         if let box = item.representedObject as? ModeBox {
             detail = "   → \(box.mode.detailedTitle)  [\(box.mode.pixelDescription)]"

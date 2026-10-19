@@ -174,10 +174,22 @@ public struct DisplayMode: Hashable, Identifiable {
 
     /// Menu label. The lightning bolt mirrors the original RDM's HiDPI marker.
     ///
-    /// Deliberately omits the refresh rate: the menu shows that in its own
-    /// submenu, so repeating it here would double every line.
+    /// Omits the refresh rate: the rate lives in its own submenu here, and in
+    /// the resolution list it is added by `menuTitle(withFastestRate:)`.
     public var menuTitle: String {
         isHiDPI ? "\(pointDescription) ⚡️" : pointDescription
+    }
+
+    /// `menuTitle` plus the fastest rate the group offers.
+    ///
+    /// The resolution list shows this rather than a bare name because the
+    /// refresh-rate menu only ever describes the geometry in use: a row that
+    /// cannot reach the rate the user wants has no other way to say so, and
+    /// "1920 × 1080 ⚡️" and "1920 × 1080" sitting a submenu apart look like the
+    /// same choice until one of them prints its ceiling.
+    public func menuTitle(withFastestRate rate: Double) -> String {
+        guard rate > 0 else { return menuTitle }
+        return "\(menuTitle) · \(String(format: "%.0f Hz", rate))"
     }
 
     /// `menuTitle` plus the refresh rate, for places where the rate is not shown
