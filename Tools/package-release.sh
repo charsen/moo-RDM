@@ -115,6 +115,13 @@ rm -f "$ZIP"
 # ready-to-drag RDM-ARM.app plus the install note.
 ditto -c -k --sequesterRsrc "$STAGE" "$ZIP"
 
+# Drop the staging copy. It is not a shipped artefact, but it *is* a second
+# bundle with the same CFBundleIdentifier sitting on disk, and LaunchServices
+# registers it on first sight — after which the system's app list shows two
+# "RDM-ARM" entries (plus the one in /Applications) that are indistinguishable
+# in the UI but launch different builds.
+rm -rf "$STAGE"
+
 # ---------------------------------------------------------------- report
 
 echo

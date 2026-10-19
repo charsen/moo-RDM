@@ -182,3 +182,14 @@ if [ "$DO_RUN" -eq 1 ]; then
   echo "==> launching"
   open "$APP"
 fi
+
+# ---------------------------------------------------------------- unregister
+
+# LaunchServices registers every .app bundle it sees, wherever it sits. Without
+# this the build output shows up in the system app list next to the installed
+# copy — two entries called "RDM-ARM" that launch different binaries, which is
+# impossible to tell apart without opening Get Info. The dev bundle is still
+# fully usable from the command line and via `open`; it just stops competing
+# with /Applications for a slot in the UI.
+LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+"$LSREGISTER" -u "$APP" >/dev/null 2>&1 || true
