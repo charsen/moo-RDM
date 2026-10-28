@@ -215,6 +215,38 @@ codesign --verify --strict --verbose=2 "$APP" 2>&1 | sed 's/^/    /'
 
 # ---------------------------------------------------------------- notarize
 
+# notarytool only reports "status: Invalid" — which rule failed is written only to
+# the submission log. Pull the submission id out of the output and fetch that log
+# automatically, so a rejection is diagnosable without hand-copying the id.
+notarize_or_explain() {
+  local target="$1" out submission_id
+  if out=$(xcrun notarytool submit "$target" --keychain-profile "$NOTARY_PROFILE" --wait 2>&1); then
+    printf '%s\n' "$out"
+    case "$out" in
+      *"status: Accepted"*) return 0 ;;
+    esac
+  else
+    printf '%s\n' "$out"
+  fi
+  submission_id=$(printf '%s\n' "$out" \
+    | awk '/^[[:space:]]*id:/{sub(/^[[:space:]]*id:[[:space:]]*/,"");print;exit}')
+  {
+    printf '\n'
+    printf 'error: notarization did not pass for %s\n' "$(basename "$target")"
+    if [ -n "$submission_id" ]; then
+      printf 'error: submission id %s\n' "$submission_id"
+      printf -- '---- notarytool log (look for severity=error in issues[]) ----\n'
+      xcrun notarytool log "$submission_id" --keychain-profile "$NOTARY_PROFILE" 2>&1 || true
+      printf -- '------------------------------------------------------------\n'
+      printf 're-fetch: xcrun notarytool log %s --keychain-profile %s\n' \
+        "$submission_id" "$NOTARY_PROFILE"
+    else
+      printf 'error: could not parse a submission id from the output above\n'
+    fi
+  } >&2
+  return 1
+}
+
 if [ "$NOTARIZE" = "1" ]; then
   if [ -z "$SIGNING_IDENTITY" ]; then
     echo "error: MOO_RDM_NOTARIZE=1 but no Developer ID Application identity was found" >&2
@@ -228,7 +260,7 @@ if [ "$NOTARIZE" = "1" ]; then
   NOTARY_ZIP="$BUILD_DIR/$APP_NAME-notary.zip"
   rm -f "$NOTARY_ZIP"
   ditto -c -k --keepParent "$APP" "$NOTARY_ZIP"
-  xcrun notarytool submit "$NOTARY_ZIP" --keychain-profile "$NOTARY_PROFILE" --wait
+  notarize_or_explain "$NOTARY_ZIP"
   xcrun stapler staple "$APP"
   xcrun stapler validate "$APP"
   rm -f "$NOTARY_ZIP"
@@ -317,7 +349,7 @@ fi
 
 if [ "$NOTARIZE" = "1" ]; then
   echo "==> notarizing the disk image"
-  xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait
+  notarize_or_explain "$DMG"
   xcrun stapler staple "$DMG"
   xcrun stapler validate "$DMG"
 fi
