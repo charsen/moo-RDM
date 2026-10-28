@@ -13,6 +13,10 @@
 #   ./build.sh --run           build, then launch
 #   ./build.sh --clean         remove build artefacts
 #
+# Output:
+#   build/RDM-ARM.app and build/RDM-ARM-<version>-<arch>.dmg. The DMG is the
+#   deliverable: it holds the notarized, stapled app plus an /Applications link.
+#
 # Signing:
 #   Picks a "Developer ID Application" identity from the keychain when one is
 #   installed, and falls back to an ad-hoc signature otherwise. Override with
@@ -23,7 +27,7 @@ set -euo pipefail
 
 APP_NAME="RDM-ARM"
 BUNDLE_ID="com.mooeen.rdm"
-VERSION="1.2.1"
+VERSION="1.2.2"
 MIN_MACOS="13.0"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -47,7 +51,9 @@ for arg in "$@"; do
       exit 0
       ;;
     -h|--help)
-      sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'
+      # Print the header block without hardcoding its end line: the range used to
+      # be '2,21p' and silently truncated as soon as a comment was added.
+      sed -n '2,/^set -euo pipefail$/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *) echo "unknown option: $arg" >&2; exit 2 ;;
@@ -229,10 +235,104 @@ if [ "$NOTARIZE" = "1" ]; then
   codesign --verify --deep --strict --verbose=2 "$APP" 2>&1 | sed 's/^/    /'
 fi
 
+# ---------------------------------------------------------------- disk image
+
+# The DMG is the only deliverable (no zip): it carries the drag-to-Applications
+# affordance, so the install instructions stay one sentence.
+#
+# Order matters. The .app was notarized and stapled above, so the copy inside the
+# image already holds its ticket; the image itself is then signed and notarized
+# again, because Gatekeeper assesses the DMG at the moment the user opens it —
+# a stapled app inside an unnotarized image still gets a scary prompt there.
+case "$ARCHS" in
+  *" "*) ARCH_TAG="universal" ;;
+  *)     ARCH_TAG="$ARCHS" ;;
+esac
+DMG="$BUILD_DIR/$APP_NAME-$VERSION-$ARCH_TAG.dmg"
+
+STAGE="$BUILD_DIR/dmg-$VERSION"
+rm -rf "$STAGE"
+mkdir -p "$STAGE"
+ditto "$APP" "$STAGE/$APP_NAME.app"
+ln -s /Applications "$STAGE/应用程序"
+
+# The install note used to live in the zip. Losing it would lose the only place
+# that explains this is a menu-bar app with no main window — the single most
+# common "it doesn't start" report. The Gatekeeper paragraph is conditional:
+# teaching users to run xattr on a notarized build would be actively harmful.
+if [ "$NOTARIZE" = "1" ]; then
+  GATEKEEPER_NOTE="本应用已通过 Apple 公证。首次打开不需要任何额外操作，也不会提示「无法验证开发者」。"
+else
+  GATEKEEPER_NOTE="本应用没有 Apple 公证，首次打开会被 macOS 拦下（提示「已损坏」或「无法验证开发者」）。
+在「终端」里执行下面这一行即可解除拦截，只需做一次：
+
+    xattr -dr com.apple.quarantine /Applications/$APP_NAME.app"
+fi
+
+if [ "$ARCH_TAG" = "universal" ]; then
+  ARCH_NOTE="系统要求：macOS $MIN_MACOS 或更高。通用二进制（arm64 + x86_64）。"
+else
+  ARCH_NOTE="系统要求：macOS $MIN_MACOS 或更高。架构：$ARCH_TAG。"
+fi
+
+cat > "$STAGE/安装说明.txt" <<NOTE
+$APP_NAME $VERSION —— 安装说明
+====================================
+
+1. 把 $APP_NAME.app 拖进「应用程序」文件夹。
+
+2. 首次打开
+$GATEKEEPER_NOTE
+
+3. 本应用没有主窗口 —— 它是菜单栏应用。打开后请看屏幕**顶部菜单栏**，
+   会多出一个显示器图标，点它就能看到所有分辨率。
+
+   如果菜单栏图标太多看不到，可以在菜单栏空白处按住 Command 再拖动图标调整顺序，
+   或先把别的菜单栏图标关掉几个。
+
+4. 想切到某个分辨率：点菜单栏图标 → 你的显示器 → 分辨率 → 选一个。
+   带 ⚡️ 的是 HiDPI 模式（画面更细腻），这些模式 macOS 自己不会显示出来。
+
+5. 卸载：退出应用（菜单里「退出」），把 $APP_NAME.app 删掉即可。
+   若还要清理偏好设置：defaults delete $BUNDLE_ID
+
+命令行用法（可选）：在终端里运行应用内的可执行文件，例如
+
+    /Applications/$APP_NAME.app/Contents/MacOS/$APP_NAME -ld      # 列出显示器
+    /Applications/$APP_NAME.app/Contents/MacOS/$APP_NAME -lm      # 列出全部模式
+    /Applications/$APP_NAME.app/Contents/MacOS/$APP_NAME --selftest   # 自检
+
+$ARCH_NOTE
+NOTE
+
+echo "==> disk image"
+rm -f "$DMG"
+hdiutil create -volname "$APP_NAME $VERSION" -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null
+rm -rf "$STAGE"
+
+if [ -n "$SIGNING_IDENTITY" ]; then
+  codesign --force --timestamp --sign "$SIGNING_IDENTITY" "$DMG" 2>&1 | sed 's/^/    /'
+  codesign --verify --strict --verbose=2 "$DMG" 2>&1 | sed 's/^/    /'
+fi
+
+if [ "$NOTARIZE" = "1" ]; then
+  echo "==> notarizing the disk image"
+  xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait
+  xcrun stapler staple "$DMG"
+  xcrun stapler validate "$DMG"
+fi
+
+(
+  cd "$BUILD_DIR"
+  shasum -a 256 "$(basename "$DMG")" > "SHA256SUMS-$VERSION.txt"
+  cat "SHA256SUMS-$VERSION.txt"
+)
+
 # ---------------------------------------------------------------- report
 
 echo
 echo "built  $APP"
+echo "dmg    $DMG"
 echo "arch   $(lipo -archs "$APP/Contents/MacOS/$APP_NAME" 2>/dev/null || echo unknown)"
 echo "size   $(du -sh "$APP" | cut -f1)"
 

@@ -2,29 +2,36 @@
 #
 # RDM-ARM release packaging.
 #
-# Builds a universal (arm64 + x86_64) app, wraps it in a zip that preserves the
-# bundle's permissions and structure, and prints a SHA-256 for the release notes.
+# build.sh already produces the deliverable: a signed, notarized, stapled DMG
+# holding the .app plus an /Applications shortcut. This wrapper exists to make
+# the release path explicit and to assert the two things a release must not get
+# wrong — universal architecture, and a version that agrees across build.sh,
+# AppInfo.swift and Info.plist (build.sh already refuses to build if they drift).
 #
-# The app is ad-hoc signed, so anything downloaded from the internet lands under
-# Gatekeeper quarantine. The zip therefore ships an install note explaining the
-# one-line fix — without it, every tester just reports "it says the app is
-# damaged".
+# There is no zip any more. A zip has no drag-to-Applications affordance and
+# cannot carry a staple of its own, so every macOS project here ships a DMG.
 #
 # Usage:
-#   ./Tools/package-release.sh            package the version in build.sh
-#   ./Tools/package-release.sh --no-build reuse the existing build/RDM-ARM.app
+#   ./Tools/package-release.sh                 build + notarize, then report
+#   ./Tools/package-release.sh --no-build      verify the existing build
+#   ./Tools/package-release.sh --no-notarize   build without submitting to Apple
+#
+# Notarization reads MOO_RDM_NOTARY_PROFILE (a notarytool keychain profile).
 #
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="$ROOT/build"
-APP="$BUILD_DIR/RDM-ARM.app"
+APP_NAME="RDM-ARM"
+APP="$BUILD_DIR/$APP_NAME.app"
 
 DO_BUILD=1
+NOTARIZE=1
 for arg in "$@"; do
   case "$arg" in
-    --no-build) DO_BUILD=0 ;;
-    -h|--help)  sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --no-build)    DO_BUILD=0 ;;
+    --no-notarize) NOTARIZE=0 ;;
+    -h|--help)     sed -n '2,/^set -euo pipefail$/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown option: $arg" >&2; exit 2 ;;
   esac
 done
@@ -37,8 +44,17 @@ if [ -z "$VERSION" ]; then
 fi
 
 if [ "$DO_BUILD" -eq 1 ]; then
-  echo "==> building universal app"
-  "$ROOT/build.sh" --universal
+  echo "==> building universal app (notarize=$NOTARIZE)"
+  if [ "$NOTARIZE" -eq 1 ]; then
+    if [ -z "${MOO_RDM_NOTARY_PROFILE:-}" ]; then
+      echo "error: MOO_RDM_NOTARY_PROFILE is not set (notarytool keychain profile)." >&2
+      echo "       Pass --no-notarize to build without notarizing." >&2
+      exit 1
+    fi
+    MOO_RDM_NOTARIZE=1 "$ROOT/build.sh" --universal
+  else
+    MOO_RDM_NOTARIZE=0 "$ROOT/build.sh" --universal
+  fi
 fi
 
 if [ ! -d "$APP" ]; then
@@ -46,12 +62,14 @@ if [ ! -d "$APP" ]; then
   exit 1
 fi
 
-ARCHS="$(lipo -archs "$APP/Contents/MacOS/RDM-ARM")"
+# ---------------------------------------------------------------- verify
+
+ARCHS="$(lipo -archs "$APP/Contents/MacOS/$APP_NAME")"
 echo "==> arch      $ARCHS"
 
 # The published artifact has to run on both Apple silicon and Intel, and both the
 # file name and the install note claim it does. Checking only for arm64 would let
-# a `--no-build` run reuse an arm64-only bundle and ship a zip that says
+# a --no-build run reuse an arm64-only bundle and ship a file that says
 # "universal" on the label while failing on half the machines it is sent to.
 case "$ARCHS" in
   *arm64*)  ;;
@@ -62,71 +80,31 @@ case "$ARCHS" in
   *) echo "error: build is missing x86_64 — re-run without --no-build" >&2; exit 1 ;;
 esac
 
-# ---------------------------------------------------------------- stage
+PLIST_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
+  "$APP/Contents/Info.plist" 2>/dev/null)"
+if [ "$PLIST_VERSION" != "$VERSION" ]; then
+  echo "error: built app is $PLIST_VERSION but build.sh says $VERSION" >&2
+  exit 1
+fi
 
-STAGE="$BUILD_DIR/stage"
-rm -rf "$STAGE"
-mkdir -p "$STAGE"
-
-# ditto (not cp) preserves symlinks and the executable bit inside the bundle.
-ditto "$APP" "$STAGE/RDM-ARM.app"
-
-cat > "$STAGE/安装说明.txt" <<EOF
-RDM-ARM $VERSION —— 安装说明
-====================================
-
-1. 把 RDM-ARM.app 拖进「应用程序」文件夹。
-
-2. 首次打开会被 macOS 拦下（提示「已损坏」或「无法验证开发者」）。
-   这是正常的：本应用没有 Apple 开发者签名与公证，只做了 ad-hoc 签名。
-   在「终端」里执行下面这一行即可解除拦截：
-
-       xattr -dr com.apple.quarantine /Applications/RDM-ARM.app
-
-   然后双击打开。只需做一次。
-
-3. 本应用没有主窗口 —— 它是菜单栏应用。打开后请看屏幕**顶部菜单栏**，
-   会多出一个显示器图标，点它就能看到所有分辨率。
-
-   如果菜单栏图标太多看不到，可以在菜单栏空白处按住 Command 再拖动图标调整顺序，
-   或先把别的菜单栏图标关掉几个。
-
-4. 想切到某个分辨率：点菜单栏图标 → 你的显示器 → 分辨率 → 选一个。
-   带 ⚡️ 的是 HiDPI 模式（画面更细腻），这些模式 macOS 自己不会显示出来。
-
-5. 卸载：退出应用（菜单里「退出」），把 RDM-ARM.app 删掉即可。
-   若还清理过偏好设置：defaults delete io.rdmarm.RDM-ARM
-
-命令行用法（可选）：在终端里运行应用内的可执行文件，例如
-
-    /Applications/RDM-ARM.app/Contents/MacOS/RDM-ARM -ld      # 列出显示器
-    /Applications/RDM-ARM.app/Contents/MacOS/RDM-ARM -lm      # 列出全部模式
-    /Applications/RDM-ARM.app/Contents/MacOS/RDM-ARM --selftest   # 自检
-
-系统要求：macOS 13.0 或更高。通用二进制（arm64 + x86_64）。
-EOF
-
-# ---------------------------------------------------------------- zip
-
-ZIP="$BUILD_DIR/RDM-ARM-$VERSION-universal.zip"
-rm -f "$ZIP"
-# No --keepParent: that would nest everything under "stage/". Without it the
-# archive root is the *contents* of the staging folder, so unzipping gives a
-# ready-to-drag RDM-ARM.app plus the install note.
-ditto -c -k --sequesterRsrc "$STAGE" "$ZIP"
-
-# Drop the staging copy. It is not a shipped artefact, but it *is* a second
-# bundle with the same CFBundleIdentifier sitting on disk, and LaunchServices
-# registers it on first sight — after which the system's app list shows two
-# "RDM-ARM" entries (plus the one in /Applications) that are indistinguishable
-# in the UI but launch different builds.
-rm -rf "$STAGE"
+DMG="$BUILD_DIR/$APP_NAME-$VERSION-universal.dmg"
+if [ ! -f "$DMG" ]; then
+  echo "error: $DMG not found — the build did not produce a disk image" >&2
+  exit 1
+fi
 
 # ---------------------------------------------------------------- report
 
 echo
-echo "packaged  $ZIP"
+echo "packaged  $DMG"
 echo "arch      $ARCHS"
 echo "version   $VERSION"
-echo "size      $(du -sh "$ZIP" | cut -f1)"
-echo "sha256    $(shasum -a 256 "$ZIP" | cut -d' ' -f1)"
+echo "size      $(du -sh "$DMG" | cut -f1)"
+echo "sha256    $(shasum -a 256 "$DMG" | cut -d' ' -f1)"
+
+# Informational only: this machine has Gatekeeper assessment disabled
+# (`override=security disabled`), so a green result here proves the ticket is
+# present, not that a clean machine will accept it.
+if command -v spctl >/dev/null 2>&1; then
+  echo "gatekeeper $(spctl -a -vv -t open --context context:primary-signature "$DMG" 2>&1 | sed -n 's/.*source=//p' | head -1)"
+fi

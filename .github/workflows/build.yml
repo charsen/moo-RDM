@@ -92,11 +92,11 @@ jobs:
           test "$code" -eq 1 || { echo "::error::refresh-audit on a missing display exited $code"; exit 1; }
           echo "CLI ok"
 
-      - name: Package release zip
+      - name: Package release dmg
         run: ./Tools/package-release.sh --no-build
 
       - uses: actions/upload-artifact@v4
         with:
-          name: RDM-ARM-zip
-          path: build/RDM-ARM-*-universal.zip
+          name: RDM-ARM-dmg
+          path: build/RDM-ARM-*-universal.dmg
           if-no-files-found: error

@@ -5,11 +5,11 @@ public enum AppInfo {
 
     public static let name = "RDM-ARM"
 
-    public static let version = "1.2.1"
+    public static let version = "1.2.2"
 
-    public static let build = "1"
+    public static let build = "2"
 
-    public static let bundleIdentifier = "io.rdmarm.RDM-ARM"
+    public static let bundleIdentifier = "com.mooeen.rdm"
 
     /// Upstream project this is a rework of.
     public static let upstreamURL = URL(string: "https://github.com/avibrazil/RDM")!

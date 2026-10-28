@@ -272,18 +272,16 @@ rdm-arm --selftest --roundtrip     # 自检并真实跑一遍「切换 → 还�
 
 ## 安装（直接下载）
 
-不想自己编译的话，从 [Releases](../../releases) 下载 `RDM-ARM-<版本>-universal.zip`，
-解压后把 `RDM-ARM.app` 拖进「应用程序」。
+不想自己编译的话，从 [Releases](../../releases) 下载 `RDM-ARM-<版本>-universal.dmg`，
+打开后把 `RDM-ARM.app` 拖进「应用程序」。
 
-**首次打开前可能需要放行。** 如果下载的包是 ad-hoc 签名（没有经过 Apple 公证），
-macOS 会拦下它并提示「已损坏」或「无法验证开发者」——这是预期的，不是文件真的坏了。
-在「终端」里执行一次：
+包内有 `安装说明.txt`。发行包用 Developer ID 签名并通过 Apple 公证，首次打开不需要
+任何额外操作，也不会提示「无法验证开发者」。只有自己从源码构建、且本机没有
+Developer ID 证书时（ad-hoc 签名）才需要放行：
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/RDM-ARM.app
 ```
-
-用 Developer ID 签名并通过公证的包不需要这一步。
 
 **它是菜单栏应用，没有主窗口。** 打开后请看屏幕**顶部菜单栏**，会多出一个显示器图标。
 如果菜单栏图标太多看不到，在菜单栏空白处按住 Command 再拖动可以调整顺序。
@@ -306,8 +304,8 @@ git clone <this-repo> && cd moo-RDM
 ./build.sh --run         # 构建并启动
 ./build.sh --clean       # 清理
 
-./Tools/package-release.sh          # 构建并打包成可发布的 zip（含安装说明 + SHA-256）
-./Tools/package-release.sh --no-build   # 复用已有产物重新打包
+./Tools/package-release.sh              # 构建、公证并校验发布包（universal + SHA-256）
+./Tools/package-release.sh --no-build   # 复用已有产物只做校验与报告
 ```
 
 构建脚本不依赖 Swift Package Manager、CocoaPods 或 Xcode.app——直接用 `swiftc` 编译，再手工组装 `.app` bundle 并签名。
@@ -321,7 +319,7 @@ MOO_RDM_NOTARIZE=1 MOO_RDM_NOTARY_PROFILE=<notarytool 的钥匙串 profile> ./bu
 ```
 
 CI（`.github/workflows/build.yml`）在干净的 macOS runner 上验证通用构建、bundle 结构、
-两个架构切片都在、版本号与 `AppInfo.swift` 一致、CLI 冒烟，并产出 zip。
+两个架构切片都在、版本号与 `AppInfo.swift` 一致、CLI 冒烟，并产出 DMG。
 **它不跑 GUI** —— 菜单栏图标无法从进程外验证，runner 也没有显示器；GUI 用 `--selftest` 手工验。
 
 > 注意 `build.sh` 的 `VERSION` 与 `Sources/Core/AppInfo.swift` 的 `version` 必须一致，
