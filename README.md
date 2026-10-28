@@ -310,17 +310,55 @@ git clone <this-repo> && cd moo-RDM
 
 构建脚本不依赖 Swift Package Manager、CocoaPods 或 Xcode.app——直接用 `swiftc` 编译，再手工组装 `.app` bundle 并签名。
 
+### 签名与公证
+
 签名分两档：钥匙串里有 `Developer ID Application` 就用它（硬运行时 + 安全时间戳），
-没有就回退 ad-hoc（只能在本机跑）。可以用环境变量显式指定，或开启公证：
+没有就回退 ad-hoc（只能在本机跑）。身份会自动探测，也可以用环境变量显式指定。
+要出能公开分发的包还得公证（用户双击就能打开、不出现「无法验证开发者」），
+公证凭据是 notarytool 的钥匙串 profile，三个 macOS 项目统一叫 `moo`：
 
 ```bash
-MOO_RDM_SIGNING_IDENTITY="Developer ID Application: …" ./build.sh
-MOO_RDM_NOTARIZE=1 MOO_RDM_NOTARY_PROFILE=<notarytool 的钥匙串 profile> ./build.sh --universal
+xcrun notarytool store-credentials moo \
+  --apple-id '<Apple ID>' --team-id '<Team ID>' --password '<App 专用密码>'
+
+MOO_RDM_NOTARIZE=1 MOO_RDM_NOTARY_PROFILE=moo ./Tools/package-release.sh
 ```
+
+`package-release.sh` 默认就带 `--notarize`；`build.sh` 单独跑时同样认这两个变量。
+凭据存在**当前用户的数据保护钥匙串**里，`security dump-keychain` 枚举不到，
+只有 `xcrun notarytool history --keychain-profile moo` 能确认它还在。凭据是机器本地的，
+换机后要重新 `store-credentials`。
+
+公证链上四条硬约束，改 `build.sh` 时别绕过：
+
+- 提交归档用 `ditto -c -k --keepParent`，**不能用 `zip`**——`zip` 会压平 bundle 的符号链接并丢扩展属性，公证直接拒绝。
+- `.app` 和 DMG **各公证一次**，顺序不能反：先公证 app 并 staple，再打 DMG、签 DMG、公证 DMG。Gatekeeper 挂载 DMG 时评估的是 DMG 自己的票据。
+- `codesign --timestamp` 不能省。安全时间戳固定「签名时证书有效」，已发布的包在证书过期后仍能验证；漏了它，包会在证书到期当天集体失效。
+- **不能只看 `notarytool` 的退出码**——它可能在 `status: Invalid` 时仍退出 0。脚本走 `notarize_or_explain`：认 `status: Accepted`，失败时自动按 submission id 拉 `notarytool log` 并打印 `issues[]`。看到 `error: notarization did not pass` 就直接读日志。
+
+证书有效期到 **2027-02-01**，和签发它的中间 CA（`Developer ID Certification Authority`）
+同一天到期。续期时新证书的签发者必须带 `OU=G2`，否则会在同一天原样过期：
+
+```bash
+security find-certificate -c "Developer ID Application" -p | openssl x509 -noout -enddate -issuer
+```
+
+发出去的包这样复核：
+
+```bash
+codesign -dv --verbose=4 build/RDM-ARM.app     # 期望 flags=0x10000(runtime)、有 Timestamp
+xcrun stapler validate build/RDM-ARM-<版本>-universal.dmg
+```
+
+注意维护机上 Gatekeeper 可能被关掉（`spctl --status` 报 `assessments disabled`），
+本地 `spctl -a` 通过只能证明票据存在，不等于在别人的干净机器上也能放行。
+
+### CI 与构建约束
 
 CI（`.github/workflows/build.yml`）在干净的 macOS runner 上验证通用构建、bundle 结构、
 两个架构切片都在、版本号与 `AppInfo.swift` 一致、CLI 冒烟，并产出 DMG。
 **它不跑 GUI** —— 菜单栏图标无法从进程外验证，runner 也没有显示器；GUI 用 `--selftest` 手工验。
+CI 也**不做公证**（runner 上没有本机钥匙串凭据），要公证得改用 App Store Connect API key。
 
 > 注意 `build.sh` 的 `VERSION` 与 `Sources/Core/AppInfo.swift` 的 `version` 必须一致，
 > 构建脚本会核对，不一致直接报错退出。
