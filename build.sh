@@ -13,10 +13,16 @@
 #   ./build.sh --run           build, then launch
 #   ./build.sh --clean         remove build artefacts
 #
+# Signing:
+#   Picks a "Developer ID Application" identity from the keychain when one is
+#   installed, and falls back to an ad-hoc signature otherwise. Override with
+#   MOO_RDM_SIGNING_IDENTITY. Set MOO_RDM_NOTARIZE=1 together with
+#   MOO_RDM_NOTARY_PROFILE=<keychain profile> to submit and staple.
+#
 set -euo pipefail
 
 APP_NAME="RDM-ARM"
-BUNDLE_ID="io.rdmarm.RDM-ARM"
+BUNDLE_ID="com.mooeen.rdm"
 VERSION="1.2.1"
 MIN_MACOS="13.0"
 
@@ -41,7 +47,7 @@ for arg in "$@"; do
       exit 0
       ;;
     -h|--help)
-      sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *) echo "unknown option: $arg" >&2; exit 2 ;;
@@ -80,6 +86,17 @@ if [ -n "$PLIST_VERSION" ] && [ "$PLIST_VERSION" != "$VERSION" ]; then
   exit 1
 fi
 echo "==> version   $VERSION"
+
+# Same reason as the version check above: the template is overwritten below, so a
+# stale Bundle ID would only surface once a user's preferences and TCC grants
+# landed under an identity nobody wrote down.
+PLIST_BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' \
+  "$ROOT/Resources/Info.plist" 2>/dev/null)"
+if [ -n "$PLIST_BUNDLE_ID" ] && [ "$PLIST_BUNDLE_ID" != "$BUNDLE_ID" ]; then
+  echo "error: bundle id mismatch — build.sh has $BUNDLE_ID but Resources/Info.plist has $PLIST_BUNDLE_ID" >&2
+  exit 1
+fi
+echo "==> bundle id $BUNDLE_ID"
 
 mkdir -p "$BUILD_DIR"
 
@@ -154,15 +171,63 @@ cp "$BUILD_DIR/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 # Keep the version in Info.plist and AppInfo.swift in step.
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP/Contents/Info.plist" >/dev/null
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" "$APP/Contents/Info.plist" >/dev/null
+/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" "$APP/Contents/Info.plist" >/dev/null
 
 plutil -lint "$APP/Contents/Info.plist" >/dev/null
 
 # ---------------------------------------------------------------- sign
 
-# Ad-hoc signature. Enough for local use; the private rotation symbol is
-# resolved at runtime and needs no entitlement.
-echo "==> signing (ad-hoc)"
-codesign --force --deep --sign - "$APP" 2>&1 | sed 's/^/    /'
+# Two tiers. A Developer ID signature is what lets another machine open the app
+# without a Gatekeeper override; ad-hoc is only good on the machine that built it.
+# The identity is taken from the environment first so a CI run can pin it, then
+# from the keychain.
+SIGNING_IDENTITY="${MOO_RDM_SIGNING_IDENTITY:-}"
+if [ -z "$SIGNING_IDENTITY" ]; then
+  SIGNING_IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null \
+    | sed -n 's/.*"\(Developer ID Application: [^"]*\)".*/\1/p' | head -1)"
+fi
+NOTARIZE="${MOO_RDM_NOTARIZE:-0}"
+NOTARY_PROFILE="${MOO_RDM_NOTARY_PROFILE:-}"
+
+# Sign inside-out instead of `--deep`. Apple discourages `--deep` for signing:
+# it blurs which nested item is at fault when notarization rejects the bundle.
+if [ -n "$SIGNING_IDENTITY" ]; then
+  echo "==> signing (Developer ID)"
+  echo "    $SIGNING_IDENTITY"
+  codesign --force --options runtime --timestamp \
+    --sign "$SIGNING_IDENTITY" "$APP/Contents/MacOS/$APP_NAME" 2>&1 | sed 's/^/    /'
+  codesign --force --options runtime --timestamp \
+    --sign "$SIGNING_IDENTITY" "$APP" 2>&1 | sed 's/^/    /'
+else
+  # Ad-hoc: enough for local use. The private rotation symbol is resolved at
+  # runtime and needs no entitlement — hardened runtime still allows loading
+  # Apple-signed private frameworks.
+  echo "==> signing (ad-hoc)"
+  codesign --force --options runtime --sign - "$APP" 2>&1 | sed 's/^/    /'
+fi
+codesign --verify --strict --verbose=2 "$APP" 2>&1 | sed 's/^/    /'
+
+# ---------------------------------------------------------------- notarize
+
+if [ "$NOTARIZE" = "1" ]; then
+  if [ -z "$SIGNING_IDENTITY" ]; then
+    echo "error: MOO_RDM_NOTARIZE=1 but no Developer ID Application identity was found" >&2
+    exit 1
+  fi
+  if [ -z "$NOTARY_PROFILE" ]; then
+    echo "error: MOO_RDM_NOTARIZE=1 but MOO_RDM_NOTARY_PROFILE is empty (notarytool keychain profile)" >&2
+    exit 1
+  fi
+  echo "==> notarizing"
+  NOTARY_ZIP="$BUILD_DIR/$APP_NAME-notary.zip"
+  rm -f "$NOTARY_ZIP"
+  ditto -c -k --keepParent "$APP" "$NOTARY_ZIP"
+  xcrun notarytool submit "$NOTARY_ZIP" --keychain-profile "$NOTARY_PROFILE" --wait
+  xcrun stapler staple "$APP"
+  xcrun stapler validate "$APP"
+  rm -f "$NOTARY_ZIP"
+  codesign --verify --deep --strict --verbose=2 "$APP" 2>&1 | sed 's/^/    /'
+fi
 
 # ---------------------------------------------------------------- report
 
@@ -174,7 +239,9 @@ echo "size   $(du -sh "$APP" | cut -f1)"
 if [ "$DO_INSTALL" -eq 1 ]; then
   echo "==> installing to /Applications"
   rm -rf "/Applications/$APP_NAME.app"
-  cp -R "$APP" /Applications/
+  # ditto, not cp -R: it preserves symlinks and extended attributes, so the
+  # signature survives the copy.
+  ditto "$APP" "/Applications/$APP_NAME.app"
   echo "installed /Applications/$APP_NAME.app"
 fi
 

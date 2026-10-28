@@ -275,13 +275,15 @@ rdm-arm --selftest --roundtrip     # 自检并真实跑一遍「切换 → 还�
 不想自己编译的话，从 [Releases](../../releases) 下载 `RDM-ARM-<版本>-universal.zip`，
 解压后把 `RDM-ARM.app` 拖进「应用程序」。
 
-**首次打开前必须做一件事。** 本应用只有 ad-hoc 签名（没有 Apple 开发者签名与公证），
+**首次打开前可能需要放行。** 如果下载的包是 ad-hoc 签名（没有经过 Apple 公证），
 macOS 会拦下它并提示「已损坏」或「无法验证开发者」——这是预期的，不是文件真的坏了。
 在「终端」里执行一次：
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/RDM-ARM.app
 ```
+
+用 Developer ID 签名并通过公证的包不需要这一步。
 
 **它是菜单栏应用，没有主窗口。** 打开后请看屏幕**顶部菜单栏**，会多出一个显示器图标。
 如果菜单栏图标太多看不到，在菜单栏空白处按住 Command 再拖动可以调整顺序。
@@ -308,7 +310,15 @@ git clone <this-repo> && cd moo-RDM
 ./Tools/package-release.sh --no-build   # 复用已有产物重新打包
 ```
 
-构建脚本不依赖 Swift Package Manager、CocoaPods 或 Xcode.app——直接用 `swiftc` 编译，再手工组装 `.app` bundle 并做 ad-hoc 签名。
+构建脚本不依赖 Swift Package Manager、CocoaPods 或 Xcode.app——直接用 `swiftc` 编译，再手工组装 `.app` bundle 并签名。
+
+签名分两档：钥匙串里有 `Developer ID Application` 就用它（硬运行时 + 安全时间戳），
+没有就回退 ad-hoc（只能在本机跑）。可以用环境变量显式指定，或开启公证：
+
+```bash
+MOO_RDM_SIGNING_IDENTITY="Developer ID Application: …" ./build.sh
+MOO_RDM_NOTARIZE=1 MOO_RDM_NOTARY_PROFILE=<notarytool 的钥匙串 profile> ./build.sh --universal
+```
 
 CI（`.github/workflows/build.yml`）在干净的 macOS runner 上验证通用构建、bundle 结构、
 两个架构切片都在、版本号与 `AppInfo.swift` 一致、CLI 冒烟，并产出 zip。
@@ -402,7 +412,7 @@ Tools/
 
 - **亮度控制**在外接显示器上不可用（需要 DDC/CI 通路，这台 BenQ 没有暴露）。内置屏应该正常。
 - **隐藏 HiDPI 模式依赖私有模式表**：这张表的记录结构 Apple 从未公开，而且在变——macOS 27 上 `depth` / `refreshRate` 字段已经读不出正确值（所以这些模式没有独立刷新率，沿用同尺寸公开模式的值）。一旦偏移再变，`PrivateModeTable` 的自检会失败并整体停用，菜单里就只剩公开模式。
-- 只做了 **ad-hoc 签名**，没有 Apple 开发者签名和公证。首次打开可能需要在"系统设置 → 隐私与安全性"里放行。
+- 目前发布的包是 **ad-hoc 签名**，没有 Apple 公证。首次打开可能需要在"系统设置 → 隐私与安全性"里放行。构建脚本已支持 Developer ID 签名与公证（见「构建」一节），拿到证书后重新出包即可。
 - 部署目标 **macOS 13.0**。旋转依赖的私有符号在更早的系统上可能不存在，此时会自动隐藏旋转菜单。
 - 构建工具链**最低已验证到 Xcode 15.4 / Swift 5.10**（CI runner）。早期版本用过会失败的写法
   （`CGRect` 的 `Hashable` 合成）已修掉，但更老的工具链未做验证。
