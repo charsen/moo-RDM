@@ -142,7 +142,16 @@ public enum DisplayManager {
     }
 
     public static func name(for displayID: CGDirectDisplayID, ordinal: Int) -> String {
-        if let name = screenNameMap()[displayID], !name.isEmpty { return name }
+        let identity = DisplayIdentity.of(displayID, ordinal: ordinal)
+        if let name = screenNameMap()[displayID], !name.isEmpty {
+            DisplayNameCache.store(name, for: identity.key)
+            return name
+        }
+        // A mirror slave is not in `NSScreen.screens`, so the name we saw while
+        // it was independent is the best one available.
+        if let cached = DisplayNameCache.name(for: identity.key) {
+            return cached
+        }
         if CGDisplayIsMain(displayID) != 0 { return L10n.t("menu.mainDisplay") }
         return L10n.t("menu.display", Int32(ordinal + 1))
     }
@@ -356,7 +365,16 @@ public enum DisplayManager {
     private static func displayName(_ displayID: CGDirectDisplayID,
                                     ordinal: Int,
                                     names: [CGDirectDisplayID: String]) -> String {
-        if let name = names[displayID], !name.isEmpty { return name }
+        let identity = DisplayIdentity.of(displayID, ordinal: ordinal)
+        if let name = names[displayID], !name.isEmpty {
+            DisplayNameCache.store(name, for: identity.key)
+            return name
+        }
+        // A mirror slave is not in `NSScreen.screens`; use the name it had while
+        // it was independent instead of falling back to "Display N".
+        if let cached = DisplayNameCache.name(for: identity.key) {
+            return cached
+        }
         if CGDisplayIsMain(displayID) != 0 { return L10n.t("menu.mainDisplay") }
         return L10n.t("menu.display", Int32(ordinal + 1))
     }
