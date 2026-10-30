@@ -135,32 +135,58 @@ final class ModeMemoryController {
         let refreshed = rotated ? DisplayManager.allInfos() : displays
         let byID = Dictionary(uniqueKeysWithValues: refreshed.map { ($0.id, $0) })
 
-        var changed = 0
+        var publicAssignments: [ModeController.Assignment] = []
+        var privateModes: [DisplayMode] = []
+        var changedIDs = Set<CGDirectDisplayID>()
+
         for entry in targets {
-            guard let display = byID[entry.displayID] else { continue }
-            if apply(entry.target, to: display) { changed += 1 }
-        }
-        return changed
-    }
+            guard let display = byID[entry.displayID],
+                  let mode = ModeController.findMode(
+                    on: display.id,
+                    width: entry.target.width,
+                    height: entry.target.height,
+                    scale: entry.target.scale,
+                    refreshRate: entry.target.refreshRate > 0 ? entry.target.refreshRate : nil,
+                    includeUnusable: true)
+            else { continue }
 
-    private func apply(_ target: RememberedMode, to display: DisplayInfo) -> Bool {
-        if let current = display.currentMode,
-           current.width == target.width,
-           current.height == target.height,
-           abs(current.scale - target.scale) < 0.01,
-           target.refreshRate == 0 || abs(current.refreshRate - target.refreshRate) < 0.5 {
-            return false
+            if display.currentMode?.isSame(as: mode) == true { continue }
+            changedIDs.insert(display.id)
+            if mode.cgMode != nil {
+                publicAssignments.append(ModeController.Assignment(displayID: display.id, mode: mode))
+            } else {
+                privateModes.append(mode)
+            }
         }
 
-        let result = ModeController.applyResolution(on: display.id,
-                                                   width: target.width,
-                                                   height: target.height,
-                                                   scale: target.scale,
-                                                   refreshRate: target.refreshRate > 0 ? target.refreshRate : nil,
-                                                   permanently: Preferences.shared.permanentChanges,
-                                                   includeUnusable: true)
-        if case .success = result { return true }
-        return false
+        // Public modes land in one transaction; a per-display loop would make the
+        // desktop reflow between every screen on attach.
+        if !publicAssignments.isEmpty {
+            switch ModeController.apply(publicAssignments,
+                                        permanently: Preferences.shared.permanentChanges) {
+            case .success:
+                break
+            case .failure:
+                // One bad mode cancels the batch; retry per display so the rest
+                // still lands.
+                for assignment in publicAssignments {
+                    if case .failure = ModeController.apply(assignment.mode,
+                                                            permanently: Preferences.shared.permanentChanges) {
+                        changedIDs.remove(assignment.displayID)
+                    }
+                }
+            }
+        }
+
+        // Private-table rows have no CGDisplayMode and open their own transaction.
+        for mode in privateModes {
+            if case .failure = ModeController.apply(mode,
+                                                    permanently: Preferences.shared.permanentChanges) {
+                changedIDs.remove(mode.displayID)
+            }
+        }
+
+        return changedIDs.count
     }
 
     // MARK: - Reacting to system changes
