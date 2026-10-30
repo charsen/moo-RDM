@@ -21,8 +21,15 @@ final class ModeMemoryController {
 
     private var isObserving = false
     private var pendingRestore: DispatchWorkItem?
+    /// What the last restore had to compromise on, keyed by display ID.
+    private(set) var lastRestoreNotes: [CGDirectDisplayID: String] = [:]
 
     deinit { stop() }
+
+    /// The last restore's note for a display, e.g. "75 Hz → 60 Hz".
+    func restoreNote(for displayID: CGDirectDisplayID) -> String? {
+        lastRestoreNotes[displayID]
+    }
 
     // MARK: - Lifecycle
 
@@ -99,6 +106,7 @@ final class ModeMemoryController {
     /// - Returns: how many displays were changed.
     @discardableResult
     func restoreRememberedModes() -> Int {
+        lastRestoreNotes.removeAll()
         guard Preferences.shared.rememberPerDisplay else { return 0 }
         let remembered = Preferences.shared.rememberedModes
         guard !remembered.isEmpty else { return 0 }
@@ -140,15 +148,26 @@ final class ModeMemoryController {
         var changedIDs = Set<CGDirectDisplayID>()
 
         for entry in targets {
-            guard let display = byID[entry.displayID],
-                  let mode = ModeController.findMode(
+            guard let display = byID[entry.displayID] else { continue }
+            guard let mode = ModeController.findMode(
                     on: display.id,
                     width: entry.target.width,
                     height: entry.target.height,
                     scale: entry.target.scale,
                     refreshRate: entry.target.refreshRate > 0 ? entry.target.refreshRate : nil,
                     includeUnusable: true)
-            else { continue }
+            else {
+                lastRestoreNotes[display.id] = L10n.t("menu.restore.missing")
+                continue
+            }
+
+            if entry.target.refreshRate > 0,
+               abs(mode.refreshRate - entry.target.refreshRate) > 0.5 {
+                lastRestoreNotes[display.id] = L10n.t(
+                    "menu.restore.rate",
+                    Int32(entry.target.refreshRate.rounded()),
+                    Int32(mode.refreshRate.rounded()))
+            }
 
             if display.currentMode?.isSame(as: mode) == true { continue }
             changedIDs.insert(display.id)
@@ -173,6 +192,7 @@ final class ModeMemoryController {
                     if case .failure = ModeController.apply(assignment.mode,
                                                             permanently: Preferences.shared.permanentChanges) {
                         changedIDs.remove(assignment.displayID)
+                        lastRestoreNotes[assignment.displayID] = L10n.t("menu.restore.failed")
                     }
                 }
             }
@@ -183,6 +203,7 @@ final class ModeMemoryController {
             if case .failure = ModeController.apply(mode,
                                                     permanently: Preferences.shared.permanentChanges) {
                 changedIDs.remove(mode.displayID)
+                lastRestoreNotes[mode.displayID] = L10n.t("menu.restore.failed")
             }
         }
 

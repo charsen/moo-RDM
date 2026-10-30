@@ -95,6 +95,9 @@ enum StatusMenuBuilder {
         if let native = display.nativePixelSize {
             submenu.addItem(disabled("   " + L10n.t("menu.native", native.description)))
         }
+        if let note = router.memory.restoreNote(for: display.id) {
+            submenu.addItem(disabled("   " + note))
+        }
         submenu.addItem(.separator())
 
         submenu.addItem(lazyModesItem(.resolutions, snapshot: snapshot,
