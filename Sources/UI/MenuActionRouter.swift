@@ -21,15 +21,6 @@ final class RotationBox: NSObject {
     }
 }
 
-final class BrightnessBox: NSObject {
-    let displayID: CGDirectDisplayID
-    let value: Float
-    init(displayID: CGDirectDisplayID, value: Float) {
-        self.displayID = displayID
-        self.value = value
-    }
-}
-
 final class DisplayBox: NSObject {
     let displayID: CGDirectDisplayID
     init(displayID: CGDirectDisplayID) {
@@ -171,12 +162,11 @@ final class MenuActionRouter: NSObject {
 
     // MARK: - Brightness
 
-    @objc func selectBrightness(_ sender: NSMenuItem) {
-        guard let box = sender.representedObject as? BrightnessBox else { return }
-        if case .failure(let error) = DisplayBrightnessController.setBrightness(box.value, on: box.displayID) {
-            report(error.description)
-        }
-        onMenuNeedsRebuild?()
+    @objc func brightnessSliderChanged(_ sender: NSSlider) {
+        let displayID = CGDirectDisplayID(sender.tag)
+        // Continuous drag: report nothing and do not rebuild the menu, or the
+        // slider would be torn out from under the pointer.
+        _ = DisplayBrightnessController.setBrightness(sender.floatValue, on: displayID)
     }
 
     // MARK: - Multiple displays

@@ -20,6 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         router.onShowAbout = { [weak self] in self?.showAbout() }
 
         installStatusItem()
+        installMainMenu()
         memory.start()
         // `start()` only registers callbacks. Without this, quitting and
         // relaunching silently skipped restoring remembered modes until the
@@ -60,6 +61,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let menu = NSMenu()
         menu.delegate = self
         statusItem.menu = menu
+    }
+
+    /// An accessory app has no menu bar, but a main menu is still what makes the
+    /// standard ⌘, / ⌘Q key equivalents work while the status menu is closed.
+    private func installMainMenu() {
+        let mainMenu = NSMenu()
+        let appItem = NSMenuItem()
+        mainMenu.addItem(appItem)
+
+        let appMenu = NSMenu()
+
+        let about = NSMenuItem(title: L10n.t("menu.about"),
+                               action: #selector(showAboutFromMainMenu(_:)),
+                               keyEquivalent: "")
+        about.target = self
+        appMenu.addItem(about)
+        appMenu.addItem(.separator())
+
+        let preferences = NSMenuItem(title: L10n.t("menu.preferences"),
+                                     action: #selector(openPreferencesFromMainMenu(_:)),
+                                     keyEquivalent: ",")
+        preferences.target = self
+        appMenu.addItem(preferences)
+        appMenu.addItem(.separator())
+
+        let quit = NSMenuItem(title: L10n.t("menu.quit"),
+                              action: #selector(NSApplication.terminate(_:)),
+                              keyEquivalent: "q")
+        quit.target = NSApp
+        appMenu.addItem(quit)
+
+        appItem.submenu = appMenu
+        NSApp.mainMenu = mainMenu
+    }
+
+    @objc private func openPreferencesFromMainMenu(_ sender: Any?) {
+        showSettings()
+    }
+
+    @objc private func showAboutFromMainMenu(_ sender: Any?) {
+        showAbout()
     }
 
     func menuWillOpen(_ menu: NSMenu) {

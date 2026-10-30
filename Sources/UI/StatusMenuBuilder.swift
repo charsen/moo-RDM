@@ -670,16 +670,25 @@ enum StatusMenuBuilder {
 
         let parent = NSMenuItem(title: L10n.t("menu.brightness"), action: nil, keyEquivalent: "")
         let submenu = NSMenu()
-        let current = DisplayBrightnessController.brightness(of: display.id)
 
-        for step in stride(from: 100, through: 0, by: -10) {
-            let value = Float(step) / 100.0
-            let item = action("\(step)%",
-                              #selector(MenuActionRouter.selectBrightness(_:)), router)
-            item.representedObject = BrightnessBox(displayID: display.id, value: value)
-            if let current, abs(current - value) < 0.05 { item.state = .on }
-            submenu.addItem(item)
-        }
+        let current = DisplayBrightnessController.brightness(of: display.id)
+        submenu.addItem(disabled(L10n.t("menu.brightness.current",
+                                        Int32((current ?? 0) * 100))))
+
+        // A continuous slider instead of eleven fixed rows: the menu closes when
+        // the user lets go, so the change is still immediate and there is no
+        // confirmation step.
+        let slider = NSSlider(value: Double(current ?? 0.5),
+                              minValue: 0, maxValue: 1,
+                              target: router,
+                              action: #selector(MenuActionRouter.brightnessSliderChanged(_:)))
+        slider.isContinuous = true
+        slider.tag = Int(display.id)
+        slider.frame = NSRect(x: 0, y: 0, width: 200, height: 24)
+
+        let control = NSMenuItem()
+        control.view = slider
+        submenu.addItem(control)
 
         parent.submenu = submenu
         return parent

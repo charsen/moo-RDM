@@ -109,6 +109,8 @@ enum GUISelfTest {
             emit("    brightness: \(DisplayBrightnessController.canChangeBrightness(of: display.id) ? "available" : "unavailable")")
         }
 
+        emit("login item   : \(LoginItemController.state)")
+
         // --- modes ---
         //
         // Worth reporting rather than assuming: this is how many of the modes the

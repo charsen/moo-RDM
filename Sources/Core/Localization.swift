@@ -85,6 +85,7 @@ public enum L10n {
         "menu.refreshAtGeometry": "%@ @ %@",
         "menu.rotation": "Rotation",
         "menu.brightness": "Brightness",
+        "menu.brightness.current": "Current: %d%%",
         "menu.showAllModes": "Show modes macOS hides",
         "menu.showAllModes.hint": "Includes modes not usable for the desktop GUI",
         "menu.hiDPIOnly": "HiDPI modes only",
@@ -166,6 +167,10 @@ public enum L10n {
         "settings.rememberPerDisplay.hint": "Restore your chosen resolution when a display is reconnected",
         "settings.restoreOnWake": "Restore modes after wake",
         "settings.restoreOnWake.hint": "Re-apply the remembered mode when the Mac wakes up",
+        "settings.launchAtLogin": "Launch at login",
+        "settings.launchAtLogin.hint": "Start RDM-ARM automatically when you log in",
+        "settings.launchAtLogin.approval": "Allow RDM-ARM in System Settings → General → Login Items.",
+        "settings.launchAtLogin.failed": "Could not change the login item.",
         "settings.forgetAll": "Forget all remembered modes",
         "settings.forgetAll.hint": "Displays keep their current mode; only the automatic restore is removed",
         "settings.forgetAll.confirm": "Forget every remembered resolution?",
@@ -193,6 +198,9 @@ public enum L10n {
 
         "error.noSuchDisplay": "No display matches index %d",
         "error.noSuchMode": "No mode matches %@",
+        "error.resolutionSyntax": "Expected a resolution like 2304x1296",
+        "error.resolutionNotInstalled": "%@ is not installed",
+        "error.jsonUnsupportedResolution": "--custom-resolution has no JSON form yet",
         "error.setModeFailed": "Could not set the mode (CoreGraphics error %d)",
         "error.rotationFailed": "Could not set rotation (error %d)",
         "error.rotationUnsupported": "This display does not support rotation",
@@ -230,6 +238,10 @@ public enum L10n {
         "cli.timingKept": "    kept — remove later with --revert",
         "cli.timingReverted": "%@: display override reverted",
         "cli.rateSubstituted": "    note: %d Hz is not offered at this size — using %d Hz (available: %@)",
+        "cli.resolutionDryRun": "    not written — add --write to install, then reconnect the display",
+        "cli.resolutionRemoveDryRun": "    not removed — add --write to apply, then reconnect the display",
+        "cli.resolutionInstalled": "    written — reconnect the display or restart to make it appear",
+        "cli.resolutionRemoved": "    removed — reconnect the display or restart to drop it",
 
         "cli.usage": """
         RDM-ARM — set macOS displays to any resolution they support
@@ -260,7 +272,11 @@ public enum L10n {
               --capabilities    Summarise hidden rates and the hardware ceiling
               --refresh-audit   Explain gaps between declared, offered and possible rates
               --custom-timing   Synthesise <width>x<height>@<hz>; add --write to install
-              --write           Install the EDID override (asks for admin rights)
+              --custom-resolution <w>x<h>
+                                Add a scaled HiDPI size; add --write to install
+              --remove-resolution <w>x<h>
+                                Remove one of ours; add --write to apply
+              --write           Install the override (EDID timing or scaled resolution)
               --keep            Keep the override instead of rolling it back
               --revert          Remove a previously installed EDID override
               --sleep-wake      Force re-enumeration with a display power cycle
@@ -291,6 +307,8 @@ public enum L10n {
           rdm-arm --refresh-audit -r 60 -d 1
           rdm-arm --refresh-audit -r 75 --json | jq .verdict
           rdm-arm --custom-timing 1920x1080@75 --write --keep -d 1
+          rdm-arm --custom-resolution 2304x1296 --write -d 0
+          rdm-arm --remove-resolution 2304x1296 --write -d 0
         """,
 
         "lang.system": "Match system",
@@ -327,6 +345,7 @@ public enum L10n {
         "menu.refreshAtGeometry": "%@ @ %@",
         "menu.rotation": "旋转",
         "menu.brightness": "亮度",
+        "menu.brightness.current": "当前：%d%%",
         "menu.showAllModes": "显示 macOS 隐藏的模式",
         "menu.showAllModes.hint": "包含无法用于桌面 GUI 的模式",
         "menu.hiDPIOnly": "仅显示 HiDPI 模式",
@@ -408,6 +427,10 @@ public enum L10n {
         "settings.rememberPerDisplay.hint": "显示器重新接入时恢复你选择的分辨率",
         "settings.restoreOnWake": "唤醒后恢复模式",
         "settings.restoreOnWake.hint": "Mac 唤醒后重新应用记住的模式",
+        "settings.launchAtLogin": "登录时启动",
+        "settings.launchAtLogin.hint": "登录后自动启动 RDM-ARM",
+        "settings.launchAtLogin.approval": "请在「系统设置 → 通用 → 登录项」中允许 RDM-ARM。",
+        "settings.launchAtLogin.failed": "无法更改登录项。",
         "settings.forgetAll": "清除全部已记住的模式",
         "settings.forgetAll.hint": "显示器保持当前模式，只是不再自动恢复",
         "settings.forgetAll.confirm": "清除所有已记住的分辨率？",
@@ -435,6 +458,9 @@ public enum L10n {
 
         "error.noSuchDisplay": "没有索引为 %d 的显示器",
         "error.noSuchMode": "没有匹配 %@ 的模式",
+        "error.resolutionSyntax": "格式应为 2304x1296",
+        "error.resolutionNotInstalled": "%@ 未安装",
+        "error.jsonUnsupportedResolution": "--custom-resolution 暂不支持 JSON 输出",
         "error.setModeFailed": "无法设置该模式（CoreGraphics 错误 %d）",
         "error.rotationFailed": "无法设置旋转（错误 %d）",
         "error.rotationUnsupported": "此显示器不支持旋转",
@@ -472,6 +498,10 @@ public enum L10n {
         "cli.timingKept": "    已保留 —— 之后可用 --revert 移除",
         "cli.timingReverted": "%@：显示器 override 已回滚",
         "cli.rateSubstituted": "    注意：该尺寸不提供 %d Hz，已使用 %d Hz（可用：%@）",
+        "cli.resolutionDryRun": "    未写入 —— 加 --write 写入，然后重新插拔显示器",
+        "cli.resolutionRemoveDryRun": "    未移除 —— 加 --write 生效，然后重新插拔显示器",
+        "cli.resolutionInstalled": "    已写入 —— 重新插拔显示器或重启后生效",
+        "cli.resolutionRemoved": "    已移除 —— 重新插拔显示器或重启后消失",
 
         "cli.usage": """
         RDM-ARM — 将 macOS 显示器设为它支持的任何分辨率
@@ -502,7 +532,11 @@ public enum L10n {
               --capabilities    汇总隐藏刷新率与硬件上限
               --refresh-audit   逐分辨率说明「声明 / 系统给出 / 链路可行」的差距
               --custom-timing   合成 <宽>x<高>@<Hz>；加 --write 才会写入
-              --write           写入 EDID override（需要管理员授权）
+              --custom-resolution <w>x<h>
+                                添加一个缩放 HiDPI 尺寸；加 --write 才写入
+              --remove-resolution <w>x<h>
+                                移除一个自定义尺寸；加 --write 才生效
+              --write           写入 override（EDID 时序或缩放分辨率）
               --keep            保留 override，不自动回滚
               --revert          移除之前安装的 EDID override
               --sleep-wake      用显示器断电/上电强制重新枚举
@@ -533,6 +567,8 @@ public enum L10n {
           rdm-arm --refresh-audit -r 60 -d 1
           rdm-arm --refresh-audit -r 75 --json | jq .verdict
           rdm-arm --custom-timing 1920x1080@75 --write --keep -d 1
+          rdm-arm --custom-resolution 2304x1296 --write -d 0
+          rdm-arm --remove-resolution 2304x1296 --write -d 0
         """,
 
         "lang.system": "跟随系统",

@@ -139,6 +139,7 @@ FRAMEWORKS=(
   -framework CoreGraphics
   -framework IOKit
   -framework Foundation
+  -framework ServiceManagement
   -framework UniformTypeIdentifiers
 )
 

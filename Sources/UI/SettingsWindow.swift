@@ -55,6 +55,7 @@ final class SettingsViewController: NSViewController, NSTabViewDelegate {
     private var rememberCheckbox: NSButton?
     private var restoreOnWakeCheckbox: NSButton?
     private var forgetAllButton: NSButton?
+    private var launchAtLoginCheckbox: NSButton?
     private var permanentCheckbox: NSButton?
     private var optionalModuleCheckbox: NSButton?
     private var rotationStatusLabel: NSTextField?
@@ -220,6 +221,7 @@ final class SettingsViewController: NSViewController, NSTabViewDelegate {
         rememberCheckbox = nil
         restoreOnWakeCheckbox = nil
         forgetAllButton = nil
+        launchAtLoginCheckbox = nil
         permanentCheckbox = nil
         optionalModuleCheckbox = nil
         rotationStatusLabel = nil
@@ -234,6 +236,8 @@ final class SettingsViewController: NSViewController, NSTabViewDelegate {
         rememberCheckbox?.state = Preferences.shared.rememberPerDisplay ? .on : .off
         restoreOnWakeCheckbox?.state = Preferences.shared.restoreOnWake ? .on : .off
         forgetAllButton?.isEnabled = !Preferences.shared.rememberedModes.isEmpty
+        launchAtLoginCheckbox?.state = LoginItemController.isEnabled ? .on : .off
+        launchAtLoginCheckbox?.isEnabled = LoginItemController.state != .unavailable
         permanentCheckbox?.state = Preferences.shared.permanentChanges ? .on : .off
         optionalModuleCheckbox?.state = Preferences.shared.enableOptionalModule ? .on : .off
         refreshStatusRows()
@@ -306,6 +310,15 @@ final class SettingsViewController: NSViewController, NSTabViewDelegate {
         forgetAllButton = forgetAll
         stack.addArrangedSubview(forgetAll)
         addFullWidth(hint(L10n.t("settings.forgetAll.hint")), to: stack)
+
+        stack.addArrangedSubview(divider())
+
+        let launch = checkbox(L10n.t("settings.launchAtLogin"),
+                              on: LoginItemController.isEnabled,
+                              action: #selector(toggleLaunchAtLogin(_:)))
+        launchAtLoginCheckbox = launch
+        stack.addArrangedSubview(launch)
+        addFullWidth(hint(L10n.t("settings.launchAtLogin.hint")), to: stack)
 
         return stack
     }
@@ -476,6 +489,41 @@ final class SettingsViewController: NSViewController, NSTabViewDelegate {
         alert.addButton(withTitle: L10n.t("common.cancel"))
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         Preferences.shared.forgetAllRememberedModes()
+    }
+
+    @objc private func toggleLaunchAtLogin(_ sender: NSButton) {
+        let want = sender.state == .on
+        do {
+            try LoginItemController.setEnabled(want)
+            switch LoginItemController.state {
+            case .enabled:
+                sender.state = .on
+            case .requiresApproval:
+                sender.state = .on
+                let alert = NSAlert()
+                alert.alertStyle = .informational
+                alert.messageText = L10n.t("settings.launchAtLogin")
+                alert.informativeText = L10n.t("settings.launchAtLogin.approval")
+                alert.addButton(withTitle: L10n.t("common.ok"))
+                alert.runModal()
+            case .disabled, .unavailable:
+                sender.state = .off
+                if want { showLoginItemError() }
+            }
+        } catch {
+            sender.state = want ? .off : .on
+            showLoginItemError(error)
+        }
+    }
+
+    private func showLoginItemError(_ error: Error? = nil) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = L10n.t("settings.launchAtLogin")
+        alert.informativeText = L10n.t("settings.launchAtLogin.failed")
+            + (error.map { "\n\($0.localizedDescription)" } ?? "")
+        alert.addButton(withTitle: L10n.t("common.ok"))
+        alert.runModal()
     }
 
     @objc private func copyDiagnostics(_ sender: NSButton) {
