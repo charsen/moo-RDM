@@ -29,8 +29,10 @@ enum StatusMenuBuilder {
                                          among: displays,
                                          router: router))
             }
-            menu.addItem(.separator())
         }
+
+        menu.addItem(.separator())
+        menu.addItem(presetsItem(router: router))
 
         menu.addItem(showHiddenModesItem(router: router))
         menu.addItem(hiDPIOnlyItem(router: router))
@@ -480,6 +482,46 @@ enum StatusMenuBuilder {
             guard let candidate else { return nil }
             return ModeController.Assignment(displayID: snapshot.display.id, mode: candidate)
         }
+    }
+
+    // MARK: - Presets
+
+    /// Saved whole-setup presets: resolution, rotation, mirror links, brightness.
+    private static func presetsItem(router: MenuActionRouter) -> NSMenuItem {
+        let parent = NSMenuItem(title: L10n.t("menu.presets"), action: nil, keyEquivalent: "")
+        let submenu = NSMenu()
+
+        submenu.addItem(action(L10n.t("menu.preset.save"),
+                               #selector(MenuActionRouter.savePreset(_:)), router))
+        submenu.addItem(.separator())
+
+        let presets = Preferences.shared.displayPresets
+        if presets.isEmpty {
+            submenu.addItem(disabled(L10n.t("menu.preset.none")))
+        } else {
+            for preset in presets {
+                let item = action(preset.name,
+                                  #selector(MenuActionRouter.applyPreset(_:)), router)
+                item.representedObject = PresetBox(preset)
+                submenu.addItem(item)
+            }
+
+            submenu.addItem(.separator())
+            let deleteHeader = NSMenuItem(title: L10n.t("menu.preset.delete"),
+                                          action: nil, keyEquivalent: "")
+            let deleteMenu = NSMenu()
+            for preset in presets {
+                let item = action(preset.name,
+                                  #selector(MenuActionRouter.deletePreset(_:)), router)
+                item.representedObject = PresetBox(preset)
+                deleteMenu.addItem(item)
+            }
+            deleteHeader.submenu = deleteMenu
+            submenu.addItem(deleteHeader)
+        }
+
+        parent.submenu = submenu
+        return parent
     }
 
     // MARK: - Hardware limits

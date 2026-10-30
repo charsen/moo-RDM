@@ -61,6 +61,11 @@ final class ResolutionBox: NSObject {
     }
 }
 
+final class PresetBox: NSObject {
+    let preset: DisplayPreset
+    init(_ preset: DisplayPreset) { self.preset = preset }
+}
+
 // MARK: - Router
 
 /// Target for every menu item action.
@@ -252,6 +257,68 @@ final class MenuActionRouter: NSObject {
                 }
             }
         }
+    }
+
+    // MARK: - Presets
+
+    @objc func savePreset(_ sender: NSMenuItem) {
+        let count = Preferences.shared.displayPresets.count
+        let defaultName = L10n.t("menu.preset.defaultName", Int32(count + 1))
+
+        let alert = NSAlert()
+        alert.messageText = L10n.t("menu.preset.save.title")
+        alert.informativeText = L10n.t("menu.preset.save.hint")
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        field.stringValue = defaultName
+        alert.accessoryView = field
+        alert.window.initialFirstResponder = field
+        alert.addButton(withTitle: L10n.t("common.ok"))
+        alert.addButton(withTitle: L10n.t("common.cancel"))
+
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        let typed = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = typed.isEmpty ? defaultName : typed
+        guard let preset = DisplayPresetEngine.capture(name: name) else {
+            report(L10n.t("error.presetEmpty"))
+            return
+        }
+
+        var presets = Preferences.shared.displayPresets
+        presets.append(preset)
+        Preferences.shared.displayPresets = presets
+        onMenuNeedsRebuild?()
+    }
+
+    @objc func applyPreset(_ sender: NSMenuItem) {
+        guard let box = sender.representedObject as? PresetBox else { return }
+        let result = DisplayPresetEngine.apply(box.preset)
+
+        for displayID in result.applied {
+            memory.remember(displayID: displayID)
+        }
+
+        if !result.appliedCleanly {
+            var lines: [String] = []
+            if !result.missing.isEmpty {
+                lines.append(L10n.t("menu.preset.missing",
+                                    result.missing.joined(separator: ", ")))
+            }
+            lines.append(contentsOf: result.failures)
+            present(lines.joined(separator: "\n"),
+                    style: .warning,
+                    title: L10n.t("menu.preset.partial"))
+        }
+        onMenuNeedsRebuild?()
+    }
+
+    @objc func deletePreset(_ sender: NSMenuItem) {
+        guard let box = sender.representedObject as? PresetBox else { return }
+        var presets = Preferences.shared.displayPresets
+        presets.removeAll { $0.id == box.preset.id }
+        Preferences.shared.displayPresets = presets
+        onMenuNeedsRebuild?()
     }
 
     // MARK: - View toggles

@@ -446,6 +446,37 @@ enum TimingSelfTest {
         } else {
             checks.check(false, "a generous link yields a ceiling")
         }
+
+        // 16. Display presets: the stored form has to survive JSON, and a preset
+        //     whose display is unplugged must be reported, not applied to some
+        //     other panel that happens to be attached.
+        let sampleDisplay = PresetDisplay(name: "Studio Display", width: 2304, height: 1296,
+                                          scale: 2, refreshRate: 60, rotation: 0, brightness: 0.5)
+        let samplePreset = DisplayPreset(
+            id: UUID(uuidString: "11111111-2222-3333-4444-555555555555")!,
+            name: "Work",
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            displays: ["edid:0610:AE46:FCA3901D:e": sampleDisplay],
+            mirrors: ["edid:09D1:8039:00005445:e": "edid:0610:AE46:FCA3901D:e"])
+        if let data = try? JSONEncoder().encode(samplePreset),
+           let decoded = try? JSONDecoder().decode(DisplayPreset.self, from: data) {
+            checks.check(decoded == samplePreset, "display presets round-trip through JSON")
+        } else {
+            checks.check(false, "display presets round-trip through JSON")
+        }
+
+        let ghost = DisplayPreset(
+            id: UUID(),
+            name: "Ghost",
+            createdAt: Date(timeIntervalSince1970: 0),
+            displays: ["edid:FFFF:FFFF:00000000:e": PresetDisplay(
+                name: "Ghost", width: 1920, height: 1080, scale: 2,
+                refreshRate: 60, rotation: 0, brightness: nil)],
+            mirrors: [:])
+        let ghostReport = DisplayPresetEngine.apply(ghost)
+        checks.check(ghostReport.applied.isEmpty && ghostReport.missing == ["Ghost"],
+                     "a preset for an unplugged display is reported, not applied",
+                     "applied \(ghostReport.applied.count), missing \(ghostReport.missing)")
     }
 
     // MARK: - Real panel
@@ -512,5 +543,14 @@ enum TimingSelfTest {
         }
         checks.check(unmatched.count <= declared.count,
                      "geometry matching runs", "\(unmatched.count) of \(declared.count) not offered")
+
+        // Preset capture is read-only; it must see every attached display.
+        if let preset = DisplayPresetEngine.capture(name: "selftest") {
+            checks.check(preset.displays.count == displays.count,
+                         "preset capture covers every attached display",
+                         "\(preset.displays.count) of \(displays.count)")
+        } else {
+            checks.check(false, "preset capture succeeds")
+        }
     }
 }

@@ -96,6 +96,16 @@ public enum L10n {
         "menu.forgetRemembered": "Forget remembered mode",
         "menu.unsupported": "not for desktop GUI",
 
+        "menu.presets": "Presets",
+        "menu.preset.save": "Save current setup…",
+        "menu.preset.save.title": "Save current setup",
+        "menu.preset.save.hint": "Name this preset. It stores each display's resolution, rotation, mirroring and brightness.",
+        "menu.preset.defaultName": "Setup %d",
+        "menu.preset.delete": "Delete preset",
+        "menu.preset.none": "No presets yet",
+        "menu.preset.partial": "Preset applied with issues",
+        "menu.preset.missing": "Not connected: %@",
+
         "menu.capabilities": "EDID and refresh limits",
         "menu.capabilities.link": "Budget: %@",
         "menu.capabilities.native": "Native timing: %@",
@@ -183,6 +193,7 @@ public enum L10n {
         "error.resolutionRange": "Width and height must be between 320 and 8192 points (backing store up to 16384)",
         "error.resolutionAlreadyOffered": "%d × %d is already available at %d Hz",
         "error.resolutionAlreadyInstalled": "%@ is already installed",
+        "error.presetEmpty": "No displays to capture",
 
         "error.timingOptionalDisabled": "The optional module is off — turn it on in Preferences first",
         "error.timingNoEDID": "Could not read this display's EDID",
@@ -319,6 +330,16 @@ public enum L10n {
         "menu.forgetRemembered": "忘掉记住的模式",
         "menu.unsupported": "不适于桌面 GUI",
 
+        "menu.presets": "预设",
+        "menu.preset.save": "保存当前配置…",
+        "menu.preset.save.title": "保存当前配置",
+        "menu.preset.save.hint": "给这套配置起个名字。会记录每块屏的分辨率、旋转、镜像关系和亮度。",
+        "menu.preset.defaultName": "配置 %d",
+        "menu.preset.delete": "删除预设",
+        "menu.preset.none": "还没有预设",
+        "menu.preset.partial": "预设已应用，但有未完成项",
+        "menu.preset.missing": "未连接：%@",
+
         "menu.capabilities": "EDID 与刷新上限",
         "menu.capabilities.link": "带宽：%@",
         "menu.capabilities.native": "原生时序：%@",
@@ -406,6 +427,7 @@ public enum L10n {
         "error.resolutionRange": "宽和高需要在 320 到 8192 点之间（渲染尺寸不超过 16384）",
         "error.resolutionAlreadyOffered": "%d × %d 已经可用（%d Hz）",
         "error.resolutionAlreadyInstalled": "%@ 已经安装",
+        "error.presetEmpty": "没有可捕获的显示器",
 
         "error.timingOptionalDisabled": "可选模块已关闭，请先在偏好设置中打开",
         "error.timingNoEDID": "读不到此显示器的 EDID",

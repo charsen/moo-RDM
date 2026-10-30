@@ -39,6 +39,7 @@ public final class Preferences {
         static let enableOptionalModule = "enableOptionalModule"
         static let language            = "language"
         static let rememberedModes     = "rememberedModes"
+        static let displayPresets      = "displayPresets"
         static let hasCompletedOnboarding = "hasCompletedOnboarding"
     }
 
@@ -148,6 +149,13 @@ public final class Preferences {
 
     public func forgetAllRememberedModes() {
         rememberedModes = [:]
+    }
+
+    // MARK: - Presets
+
+    public var displayPresets: [DisplayPreset] {
+        get { decode([DisplayPreset].self, key: Key.displayPresets) ?? [] }
+        set { encode(newValue, key: Key.displayPresets); changed() }
     }
 
     // MARK: - Codable helpers
