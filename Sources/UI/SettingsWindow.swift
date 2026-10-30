@@ -110,6 +110,23 @@ final class SettingsViewController: NSViewController, NSTabViewDelegate {
         })
     }
 
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        // AppKit's first layout of the Advanced/About tabs costs ~30 ms. Warm
+        // them just after the window settles so the first click is instant; this
+        // is off the path that made opening the window feel slow.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+            self?.warmLazyTabs()
+        }
+    }
+
+    private func warmLazyTabs() {
+        guard view.window?.isVisible == true else { return }
+        installTab(at: 1)
+        installTab(at: 2)
+        for tab in tabs { tab.container.layoutSubtreeIfNeeded() }
+    }
+
     // MARK: - Tabs
 
     private func makeTab(titleKey: String, identifier: String) {
