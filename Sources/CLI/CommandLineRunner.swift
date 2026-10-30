@@ -345,6 +345,17 @@ public enum CommandLineRunner {
                 print("\(display.name): now \(mode.pointDescription)\(mode.isHiDPI ? " ⚡️" : "")"
                       + (mode.refreshRate > 0 ? String(format: " @ %.0f Hz", mode.refreshRate) : ""))
                 print("    pixels \(mode.pixelDescription), scale \(String(format: "%.2f", mode.scale))")
+                if let requested = options.refresh,
+                   abs(mode.refreshRate - requested) > 0.5 {
+                    let rates = availableRates(on: display.id,
+                                               width: mode.width,
+                                               height: mode.height,
+                                               scale: mode.scale)
+                    print(L10n.t("cli.rateSubstituted",
+                                 Int32(requested.rounded()),
+                                 Int32(mode.refreshRate.rounded()),
+                                 rates))
+                }
             case .failure(let error):
                 writeError(error.description)
                 exitCode = 1
@@ -367,6 +378,20 @@ public enum CommandLineRunner {
         }
 
         return exitCode
+    }
+
+    /// Rates the display lists at the geometry that was actually applied.
+    private static func availableRates(on displayID: CGDirectDisplayID,
+                                       width: Int,
+                                       height: Int,
+                                       scale: Double) -> String {
+        let rates = DisplayManager.allModes(for: displayID, includeUnusable: true)
+            .filter {
+                $0.width == width && $0.height == height
+                    && abs($0.scale - scale) < 0.01 && $0.refreshRate > 0
+            }
+            .map { Int($0.refreshRate.rounded()) }
+        return Array(Set(rates)).sorted(by: >).map(String.init).joined(separator: "/")
     }
 
     // MARK: - EDID and hardware limits
