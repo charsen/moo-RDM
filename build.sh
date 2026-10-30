@@ -27,8 +27,8 @@ set -euo pipefail
 
 APP_NAME="RDM-ARM"
 BUNDLE_ID="com.mooeen.rdm"
-VERSION="1.4.0"
-BUILD="6"
+VERSION="1.4.1"
+BUILD="7"
 MIN_MACOS="13.0"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
