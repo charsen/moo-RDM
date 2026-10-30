@@ -49,6 +49,7 @@ enum CustomTimingEngine {
         case noEDID
         case noNativeTiming
         case geometryTooLarge(String)
+        case clockCeilingExceeded(Double)
         case aboveBudget(requested: Double, maximum: Double)
         case noTimingSlot
         case overrideUnavailable
@@ -63,6 +64,8 @@ enum CustomTimingEngine {
                 return L10n.t("error.timingNoNative")
             case .geometryTooLarge(let geometry):
                 return L10n.t("error.timingGeometry", geometry)
+            case .clockCeilingExceeded(let megahertz):
+                return L10n.t("error.timingClockCeiling", Int32(megahertz.rounded()))
             case .aboveBudget(let requested, let maximum):
                 return L10n.t("error.timingBudget",
                               Int32(requested.rounded()), Int32(maximum.rounded()))
@@ -103,6 +106,18 @@ enum CustomTimingEngine {
             isSynthetic = true
         }
         guard let timing = base else {
+            // "Cannot scale the native timing" and "the descriptor's clock field
+            // overflows" need different advice: the first is an unsupported
+            // geometry, the second is exactly why a 5K panel cannot take a
+            // synthesised timing at all.
+            let reference = edid.detailedTimings.first(where: {
+                $0.width == width && $0.height == height
+            }) ?? report.nativeTiming
+            if let reference,
+               let rate = reference.estimatedPixelRate(width: width, height: height, refresh: refresh),
+               rate > DetailedTiming.maximumPixelClockHz {
+                return .failure(.clockCeilingExceeded(rate / 1_000_000))
+            }
             if report.nativeTiming == nil { return .failure(.noNativeTiming) }
             return .failure(.geometryTooLarge("\(width) × \(height)"))
         }

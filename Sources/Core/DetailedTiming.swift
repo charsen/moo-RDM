@@ -223,4 +223,20 @@ public struct DetailedTiming: Hashable, Sendable {
         String(format: "%d × %d @ %.3f Hz (%.2f MHz, totals %d × %d)",
                width, height, refreshRate, Double(pixelClockKHz) / 1000.0, hTotal, vTotal)
     }
+
+    // MARK: - Encodability
+
+    /// The descriptor's clock field is 16 bits of 10 kHz, so nothing above this
+    /// can be written into an EDID — no matter what the link or the panel allows.
+    public static let maximumPixelClockHz: Double = 655_350_000
+
+    /// Pixel rate a timing at this geometry and rate would need, keeping the
+    /// blanking ratios of the receiver. Used to explain *why* a 5K-class timing
+    /// cannot be synthesised: the ceiling is the descriptor, not the display.
+    public func estimatedPixelRate(width: Int, height: Int, refresh: Double) -> Double? {
+        guard hActive > 0, vActive > 0, width > 0, height > 0, refresh > 0 else { return nil }
+        let totalH = Double(width) * Double(hTotal) / Double(hActive)
+        let totalV = Double(height) * Double(vTotal) / Double(vActive)
+        return totalH * totalV * refresh
+    }
 }

@@ -404,6 +404,48 @@ enum TimingSelfTest {
                      "shared geometry keeps the fastest rate both displays offer")
         checks.check(DisplayMode.commonResolutions(among: [], hiDPIOnly: false).isEmpty,
                      "no displays means no common resolutions")
+
+        // 14. Encodability ceiling. The descriptor's clock field, not the link,
+        //     is what stops a 5K timing; saying "geometry too large" would send
+        //     the user looking at the wrong limit.
+        let needed5K = preferred.estimatedPixelRate(width: 5120, height: 2880, refresh: 60)
+        checks.check(needed5K != nil && needed5K! > DetailedTiming.maximumPixelClockHz,
+                     "a 5K timing is measured above the EDID clock ceiling",
+                     needed5K.map { String(format: "%.0f MHz", $0 / 1_000_000) } ?? "nil")
+        let needed4K = preferred.estimatedPixelRate(width: 3840, height: 2160, refresh: 60)
+        checks.check(needed4K != nil && needed4K! < DetailedTiming.maximumPixelClockHz,
+                     "a 4K timing stays inside the descriptor clock field",
+                     needed4K.map { String(format: "%.0f MHz", $0 / 1_000_000) } ?? "nil")
+
+        // 15. A link too small for the panel's own minimum must not be rounded up
+        //     to that minimum: that would turn "cannot carry it" into a ceiling
+        //     the custom-timing path would then try to encode.
+        let starved = DisplayCapabilities.Report(
+            displayID: 1, edid: edid, nativeTiming: edid.preferredTiming,
+            hiddenRates: [], linkMaxPixelRate: 100_000_000,
+            maxRefreshRate: 76, minRefreshRate: 50,
+            nativeFormat: PixelSize(width: 3840, height: 2160),
+            offeredModes: [])
+        if let ceiling = starved.estimatedMaximumRefresh(width: 3840, height: 2160) {
+            checks.check(ceiling < 50,
+                         "a starved link is reported below the vendor minimum",
+                         String(format: "%.1f Hz", ceiling))
+        } else {
+            checks.check(false, "a starved link still yields a ceiling")
+        }
+        let generous = DisplayCapabilities.Report(
+            displayID: 1, edid: edid, nativeTiming: edid.preferredTiming,
+            hiddenRates: [], linkMaxPixelRate: 10_000_000_000,
+            maxRefreshRate: 76, minRefreshRate: 50,
+            nativeFormat: PixelSize(width: 3840, height: 2160),
+            offeredModes: [])
+        if let ceiling = generous.estimatedMaximumRefresh(width: 3840, height: 2160) {
+            checks.check(abs(ceiling - 76) < 0.1,
+                         "the vendor maximum still caps a generous link",
+                         String(format: "%.1f Hz", ceiling))
+        } else {
+            checks.check(false, "a generous link yields a ceiling")
+        }
     }
 
     // MARK: - Real panel

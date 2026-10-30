@@ -52,7 +52,10 @@ public enum DisplayCapabilities {
                 cap = min(cap ?? vendor, vendor)
             }
             guard let result = cap else { return nil }
-            if let floor = minRefreshRate, result < floor { return floor }
+            // A ceiling below the vendor's own minimum means the geometry cannot
+            // run in the panel's supported range at all. Clamping it up to that
+            // minimum would turn "the link cannot carry this" into an answer that
+            // says it can — and `--custom-timing` would then try to encode it.
             return result
         }
 
