@@ -86,6 +86,12 @@ jobs:
           # assertion is vacuous without a display, and catches a silently
           # ignored flag on a developer machine.
           "$BIN" -lm --json -w 2304 | python3 -c "import json,sys; d=json.load(sys.stdin); assert all(m['width'] == 2304 for x in d['displays'] for m in x.get('modes', []))"
+          # JSON shape is stable even when the runner has no displays: top-level
+          # keys always exist, and any mode rows must carry the documented fields.
+          "$BIN" -ld --json | python3 -c "import json,sys; d=json.load(sys.stdin); assert {'version','architecture','displays'} <= set(d); assert isinstance(d['displays'], list)"
+          "$BIN" -lm --json | python3 -c "import json,sys; d=json.load(sys.stdin); assert all({'width','height','pixelWidth','pixelHeight','scale','hiDPI','refreshRate','usable','modeID','flags'} <= set(m) for x in d['displays'] for m in x.get('modes', []))"
+          "$BIN" --help | grep -q -- '--usable-only'
+          "$BIN" --help | grep -q -- '--permanent'
           # Asking about a display that is not there must be a clean exit 1 with a
           # message, not a crash: `--refresh-audit` reads EDID through IOKit and
           # enumerates modes, and neither is guaranteed to return anything.
