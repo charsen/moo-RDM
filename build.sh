@@ -27,7 +27,8 @@ set -euo pipefail
 
 APP_NAME="RDM-ARM"
 BUNDLE_ID="com.mooeen.rdm"
-VERSION="1.3.0"
+VERSION="1.3.1"
+BUILD="4"
 MIN_MACOS="13.0"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -73,13 +74,19 @@ echo "==> SDK       $SDK_PATH"
 echo "==> Swift     $(swiftc --version 2>&1 | head -1)"
 echo "==> arch(es)  $ARCHS"
 
-# VERSION here, AppInfo.version and the Info.plist template must all agree,
-# otherwise the About panel and the Finder Get Info window would report
+# VERSION/BUILD here, AppInfo.version/build and the Info.plist template must all
+# agree, otherwise the About panel and the Finder Get Info window would report
 # different versions of the same build.
 APPINFO_VERSION="$(sed -n 's/.*static let version = "\([^"]*\)".*/\1/p' \
   "$ROOT/Sources/Core/AppInfo.swift" | head -1)"
 if [ -n "$APPINFO_VERSION" ] && [ "$APPINFO_VERSION" != "$VERSION" ]; then
   echo "error: version mismatch — build.sh has $VERSION but AppInfo.swift has $APPINFO_VERSION" >&2
+  exit 1
+fi
+APPINFO_BUILD="$(sed -n 's/.*static let build = "\([^"]*\)".*/\1/p' \
+  "$ROOT/Sources/Core/AppInfo.swift" | head -1)"
+if [ -n "$APPINFO_BUILD" ] && [ "$APPINFO_BUILD" != "$BUILD" ]; then
+  echo "error: build mismatch — build.sh has $BUILD but AppInfo.swift has $APPINFO_BUILD" >&2
   exit 1
 fi
 
@@ -91,7 +98,13 @@ if [ -n "$PLIST_VERSION" ] && [ "$PLIST_VERSION" != "$VERSION" ]; then
   echo "error: version mismatch — build.sh has $VERSION but Resources/Info.plist has $PLIST_VERSION" >&2
   exit 1
 fi
-echo "==> version   $VERSION"
+PLIST_BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' \
+  "$ROOT/Resources/Info.plist" 2>/dev/null)"
+if [ -n "$PLIST_BUILD" ] && [ "$PLIST_BUILD" != "$BUILD" ]; then
+  echo "error: build mismatch — build.sh has $BUILD but Resources/Info.plist has $PLIST_BUILD" >&2
+  exit 1
+fi
+echo "==> version   $VERSION ($BUILD)"
 
 # Same reason as the version check above: the template is overwritten below, so a
 # stale Bundle ID would only surface once a user's preferences and TCC grants
@@ -177,7 +190,7 @@ cp "$BUILD_DIR/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 
 # Keep the version in Info.plist and AppInfo.swift in step.
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP/Contents/Info.plist" >/dev/null
-/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" "$APP/Contents/Info.plist" >/dev/null
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD" "$APP/Contents/Info.plist" >/dev/null
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" "$APP/Contents/Info.plist" >/dev/null
 
 plutil -lint "$APP/Contents/Info.plist" >/dev/null
