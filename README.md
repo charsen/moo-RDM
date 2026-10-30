@@ -505,7 +505,7 @@ Sources/
     Preferences.swift             偏好设置持久化
   UI/
     AppDelegate.swift         菜单栏生命周期
-    StatusMenuBuilder.swift   菜单构建（所有显示器、预设、自定义分辨率入口）
+    StatusMenuBuilder.swift   菜单构建（所有显示器、预设）
     MenuActionRouter.swift    菜单动作分发
     CustomResolutionWindow.swift 添加/移除缩放分辨率（AppKit，入口暂时隐藏）
     SettingsWindow.swift      设置窗口（AppKit）
