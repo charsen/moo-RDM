@@ -427,8 +427,12 @@ public enum CommandLineRunner {
             if unique.count > 16 { print("      … \(unique.count - 16) more") }
         }
 
-        if DisplayOverrideInstaller.hasOverride(for: edid) {
+        if DisplayOverrideInstaller.hasEDIDOverride(for: edid) {
             print("    override    installed (\(DisplayOverrideInstaller.target(for: edid).path))")
+        }
+        let scaled = DisplayOverrideInstaller.scaledResolutions(for: edid)
+        if !scaled.isEmpty {
+            print("    scaled      \(scaled.map(\.label).joined(separator: ", "))")
         }
         return 0
     }
@@ -468,15 +472,22 @@ public enum CommandLineRunner {
             }
         }
 
-        if DisplayOverrideInstaller.hasOverride(for: edid) {
+        let scaled = DisplayOverrideInstaller.scaledResolutions(for: edid)
+        if DisplayOverrideInstaller.hasEDIDOverride(for: edid) {
             print("    override       installed")
             print("                   remove with --revert -d \(display.ordinal)")
-        } else if DisplayOverrideInstaller.support.isAvailable {
-            print("    beyond         rdm-arm --custom-timing <w>x<h>@<hz> --write -d \(display.ordinal)")
-        } else {
-            // Recommending a command that is known to be a no-op here would be
-            // the same dishonesty as reporting success for it.
-            print("    beyond         timing computed, but a display override is ignored on Apple silicon")
+        }
+        if !scaled.isEmpty {
+            print("    scaled         \(scaled.map(\.label).joined(separator: ", "))")
+        }
+        if !DisplayOverrideInstaller.hasEDIDOverride(for: edid) {
+            if DisplayOverrideInstaller.support(for: .edidBlob).isAvailable {
+                print("    beyond         rdm-arm --custom-timing <w>x<h>@<hz> --write -d \(display.ordinal)")
+            } else {
+                // Recommending a command that is known to be a no-op here would be
+                // the same dishonesty as reporting success for it.
+                print("    beyond         timing computed, but an EDID override is ignored on Apple silicon")
+            }
         }
         return 0
     }
@@ -612,8 +623,8 @@ public enum CommandLineRunner {
                       + " but the panel never declared it")
                 print("                   rdm-arm --custom-timing "
                       + "\(best.width)x\(best.height)@\(rateText(target)) -d \(display.ordinal)")
-                if !DisplayOverrideInstaller.support.isAvailable {
-                    print("                   (computes only — Apple silicon ignores the override)")
+                if !DisplayOverrideInstaller.support(for: .edidBlob).isAvailable {
+                    print("                   (computes only — Apple silicon ignores an EDID override)")
                 }
             case .offered, .beyondLink, .unknown:
                 // An offered row cannot arrive here: `offeredAtAnyGeometry` above
@@ -774,13 +785,13 @@ public enum CommandLineRunner {
         // The timing can be computed everywhere; handing it to the system cannot.
         // Saying so here costs nothing and saves an administrator prompt that is
         // guaranteed to end in "mode list unchanged".
-        if options.writeOverride, !DisplayOverrideInstaller.support.isAvailable {
+        if options.writeOverride, !DisplayOverrideInstaller.support(for: .edidBlob).isAvailable {
             writeError(L10n.t("error.overrideInert"))
             return 3
         }
 
         guard options.writeOverride else {
-            print(L10n.t(DisplayOverrideInstaller.support.isAvailable
+            print(L10n.t(DisplayOverrideInstaller.support(for: .edidBlob).isAvailable
                          ? "cli.timingDryRun"
                          : "cli.timingDryRunInert"))
             return 0
@@ -906,13 +917,16 @@ public enum CommandLineRunner {
     }
 
     private static func dto(_ display: DisplayInfo, includeModes: Bool, options: Options) -> DisplayDTO {
-        var modes: [DisplayMode] = []
-        if includeModes {
-            modes = DisplayManager.allModes(for: display.id,
-                                            includeUnusable: options.includeUnusable)
-            if options.hiDPIOnly { modes = modes.filter(\.isHiDPI) }
-        }
-        let all = DisplayManager.allModes(for: display.id)
+        // One enumeration per display: the filtered list and the counters all
+        // come from the same table, and a second read could disagree with the
+        // first if the topology changes in between.
+        let all = DisplayManager.allModes(for: display.id, includeUnusable: true)
+        var modes = options.includeUnusable ? all : all.filter { $0.isUsable && !$0.isPrivate }
+        if options.hiDPIOnly { modes = modes.filter(\.isHiDPI) }
+        if let width = options.width { modes = modes.filter { $0.width == width } }
+        if let height = options.height { modes = modes.filter { $0.height == height } }
+        if let scale = options.scale { modes = modes.filter { abs($0.scale - scale) < 0.01 } }
+
         return DisplayDTO(
             index: display.ordinal,
             id: display.id,
@@ -978,9 +992,13 @@ public enum CommandLineRunner {
     }
 
     private struct OverrideDTO: Codable {
+        /// Any RDM-ARM-managed key is present in the panel's override file.
         let installed: Bool
-        /// False on Apple silicon, where macOS ignores the override directory.
+        /// False on Apple silicon for `IODisplayEDID`; scaled resolutions are
+        /// separate and still writable there.
         let writable: Bool
+        /// Extra `scale-resolutions` entries this app added, e.g. "2304 × 1296 ⚡️ (4608 × 2592)".
+        let scaledResolutions: [String]
     }
 
     private struct CapabilitiesDTO: Codable {
@@ -1028,8 +1046,9 @@ public enum CommandLineRunner {
                 HiddenRateDTO(width: $0.width, height: $0.height,
                               refreshRate: $0.refreshRate, source: $0.source.rawValue)
             },
-            override: OverrideDTO(installed: DisplayOverrideInstaller.hasOverride(for: edid),
-                                  writable: DisplayOverrideInstaller.support.isAvailable))
+            override: OverrideDTO(installed: DisplayOverrideInstaller.hasAnyOverride(for: edid),
+                                  writable: DisplayOverrideInstaller.support(for: .edidBlob).isAvailable,
+                                  scaledResolutions: DisplayOverrideInstaller.scaledResolutions(for: edid).map(\.label)))
     }
 
     // MARK: - Audit JSON
@@ -1167,7 +1186,7 @@ public enum CommandLineRunner {
                     pointWidth: nil, pointHeight: nil,
                     command: "rdm-arm --custom-timing "
                         + "\(best.width)x\(best.height)@\(rateText(target)) -d \(display.ordinal)",
-                    computesOnly: !DisplayOverrideInstaller.support.isAvailable)
+                    computesOnly: !DisplayOverrideInstaller.support(for: .edidBlob).isAvailable)
             case .offered, .beyondLink, .unknown:
                 break
             }

@@ -9,8 +9,9 @@ import Foundation
 let arguments = Array(CommandLine.arguments.dropFirst())
 
 // GUI diagnostics: creates the real status item, reports where the window
-// server put it, and prints the menu it built.
-if arguments.first == "--selftest" {
+// server put it, and prints the menu it built. Accepts the flag anywhere so
+// `--roundtrip --selftest` and `--selftest --roundtrip` behave the same.
+if arguments.contains("--selftest") {
     exit(GUISelfTest.run(arguments: arguments))
 }
 

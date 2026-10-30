@@ -50,6 +50,30 @@ public struct DisplayModeFlags: OptionSet, Hashable, Sendable {
     }
 }
 
+/// A resolution as the user thinks of it: point size plus HiDPI or not.
+public struct ResolutionChoice: Hashable, Sendable {
+    public let width: Int
+    public let height: Int
+    public let isHiDPI: Bool
+
+    public init(width: Int, height: Int, isHiDPI: Bool) {
+        self.width = width
+        self.height = height
+        self.isHiDPI = isHiDPI
+    }
+}
+
+/// A resolution plus a refresh rate available on every display in a set.
+public struct CommonResolution: Hashable, Sendable {
+    public let choice: ResolutionChoice
+    public let refreshRate: Int
+
+    public init(choice: ResolutionChoice, refreshRate: Int) {
+        self.choice = choice
+        self.refreshRate = refreshRate
+    }
+}
+
 /// One selectable display mode on a specific display.
 ///
 /// Wraps a `CGDisplayMode` — CoreGraphics owns the underlying ref and Swift ARC
@@ -121,6 +145,30 @@ public struct DisplayMode: Hashable, Identifiable {
         self.isUsable    = true
     }
 
+    /// Builds a mode from already-known numbers, including geometries whose
+    /// backing store does not follow `width * scale` (rotated displays). Used by
+    /// the pure self test, which cannot obtain a `CGDisplayMode` without hardware.
+    init(displayID: CGDirectDisplayID,
+         modeID: Int32 = 0,
+         width: Int,
+         height: Int,
+         pixelWidth: Int,
+         pixelHeight: Int,
+         refreshRate: Double = 60,
+         ioFlags: UInt32 = 0,
+         isUsable: Bool = true) {
+        self.displayID   = displayID
+        self.cgMode      = nil
+        self.width       = width
+        self.height      = height
+        self.pixelWidth  = pixelWidth
+        self.pixelHeight = pixelHeight
+        self.refreshRate = refreshRate
+        self.ioFlags     = ioFlags
+        self.modeID      = modeID
+        self.isUsable    = isUsable
+    }
+
     // MARK: - Identity
 
     public var id: String { "\(displayID):\(modeID)" }
@@ -150,13 +198,45 @@ public struct DisplayMode: Hashable, Identifiable {
     public var flags: DisplayModeFlags { DisplayModeFlags(rawValue: ioFlags) }
 
     /// Backing scale factor: 1.0 for standard, 2.0 for HiDPI/Retina.
+    ///
+    /// Derived from area rather than width alone. A rotated display reports its
+    /// point size in the rotated orientation while the backing store keeps the
+    /// panel's own orientation, so `pixelWidth / width` can come out as 1.0 and
+    /// make every HiDPI row disappear under the default HiDPI-only filter.
     public var scale: Double {
-        width > 0 ? Double(pixelWidth) / Double(width) : 1.0
+        guard width > 0, height > 0 else { return 1.0 }
+        let pointArea = Double(width * height)
+        let pixelArea = Double(pixelWidth * pixelHeight)
+        guard pointArea > 0, pixelArea > 0 else { return 1.0 }
+        return (pixelArea / pointArea).squareRoot()
     }
 
     /// True when the backing store is larger than the logical size, i.e. a HiDPI mode.
     /// These are the modes RDM exists to unlock — macOS normally hides them.
-    public var isHiDPI: Bool { pixelWidth > width && pixelHeight > height }
+    public var isHiDPI: Bool { pixelWidth * pixelHeight > width * height }
+
+    /// A 1× row whose output geometry is larger than the panel's native size.
+    ///
+    /// macOS creates these when a `scale-resolutions` entry is read as a
+    /// standard size. No panel ever declared such a timing, so selecting one is
+    /// a good way to black the screen; the menu hides them while the CLI keeps
+    /// reporting what the mode table really contains.
+    public func isStandardOutputBeyondPanel(_ native: PixelSize?) -> Bool {
+        guard let native, !isHiDPI else { return false }
+        let fitsPortrait = pixelWidth <= native.width && pixelHeight <= native.height
+        let fitsLandscape = pixelWidth <= native.height && pixelHeight <= native.width
+        return !(fitsPortrait || fitsLandscape)
+    }
+
+    /// The 1× twin macOS creates next to a custom `scale-resolutions` entry.
+    ///
+    /// Adding 4608 × 2592 to create `2304 × 1296 ⚡️` also adds a 1× mode at
+    /// 4608 × 2592. It is inside the panel, so the "beyond native" rule does not
+    /// catch it, but no display ever declared that output timing. Selecting it is
+    /// how a custom resolution blacks a screen.
+    public func isCustomStandardTwin(of backing: PixelSize) -> Bool {
+        !isHiDPI && pixelWidth == backing.width && pixelHeight == backing.height
+    }
 
     /// True when the mode only exists in the private table — the public
     /// enumeration does not return it, and it has to be applied by ID.
@@ -239,6 +319,51 @@ public struct DisplayMode: Hashable, Identifiable {
         let names = flags.names
         return names.isEmpty ? "none" : names.joined(separator: ", ")
     }
+
+    // MARK: - Cross-display matching
+
+    /// Resolutions every display in the set can show, with the fastest refresh
+    /// rate they all offer at that size.
+    ///
+    /// The caller decides which modes are eligible (public, usable, not the 1×
+    /// twin of a custom entry); this function only does the intersection, so it
+    /// is cheap to pin in the self test.
+    public static func commonResolutions(among displays: [[DisplayMode]],
+                                         hiDPIOnly: Bool) -> [CommonResolution] {
+        guard displays.count >= 2 else { return [] }
+
+        var perDisplay: [[ResolutionChoice: Set<Int>]] = []
+        for modes in displays {
+            var map: [ResolutionChoice: Set<Int>] = [:]
+            for mode in modes where !hiDPIOnly || mode.isHiDPI {
+                let choice = ResolutionChoice(width: mode.width,
+                                              height: mode.height,
+                                              isHiDPI: mode.isHiDPI)
+                map[choice, default: []].insert(Int(mode.refreshRate.rounded()))
+            }
+            perDisplay.append(map)
+        }
+
+        guard let first = perDisplay.first else { return [] }
+        var result: [CommonResolution] = []
+        for (choice, rates) in first {
+            var common = rates
+            for map in perDisplay.dropFirst() {
+                guard let other = map[choice] else { common = []; break }
+                common.formIntersection(other)
+            }
+            if let best = common.max() {
+                result.append(CommonResolution(choice: choice, refreshRate: best))
+            }
+        }
+
+        return result.sorted { a, b in
+            if a.choice.width != b.choice.width { return a.choice.width > b.choice.width }
+            if a.choice.isHiDPI != b.choice.isHiDPI { return a.choice.isHiDPI }
+            if a.choice.height != b.choice.height { return a.choice.height > b.choice.height }
+            return a.refreshRate > b.refreshRate
+        }
+    }
 }
 
 // MARK: - Collection helpers
@@ -266,8 +391,12 @@ public extension Collection where Element == DisplayMode {
     /// macOS returns several distinct mode IDs for what the user sees as one entry
     /// (different pixel encodings, colour depths and scan variants), and listing
     /// them all produces a menu with the same "60 Hz" repeated four times.
+    ///
+    /// The backing-store size deliberately stays out of the key: two encodings
+    /// that render the same point size at the same rate are one menu row. The
+    /// 1× / HiDPI split stays in, because those are genuinely different choices.
     func entryKey(_ mode: DisplayMode) -> String {
-        "\(mode.resolutionKey)@\(Int(mode.refreshRate.rounded()))"
+        "\(mode.width)x\(mode.height)@\(Int(mode.refreshRate.rounded())):\(mode.isHiDPI ? 2 : 1)"
     }
 
     /// Collapses visually identical modes into one entry per geometry + refresh rate.

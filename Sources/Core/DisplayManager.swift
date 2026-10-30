@@ -89,6 +89,18 @@ public struct DisplayInfo: Identifiable, Hashable {
     }
 }
 
+/// One display plus the mode table read for it.
+///
+/// The menu needs the mode list, the native size and the current mode in the
+/// same breath. Computing them separately used to enumerate the display three
+/// times per open; a snapshot reads the table once and derives the rest.
+public struct DisplaySnapshot {
+    public let display: DisplayInfo
+    /// Modes that should be listed: the full table when macOS-hidden modes are
+    /// on, otherwise the usable public rows.
+    public let modes: [DisplayMode]
+}
+
 /// Reads the display topology through the **public** CoreGraphics API.
 ///
 /// No private SPI is used anywhere in this type — that is the whole point of the
@@ -232,23 +244,33 @@ public enum DisplayManager {
     ///
     /// The reliable signal is `kDisplayModeNativeFlag`, which macOS sets on the
     /// modes that map 1:1 onto the panel.
-    public static func nativePixelSize(for displayID: CGDirectDisplayID) -> PixelSize? {
+    public static func nativePixelSize(in modes: [DisplayMode]) -> PixelSize? {
         // Private modes are excluded on purpose: their backing stores are larger
         // than the panel, so the "largest pixel size" fallback would report a
         // supersampled size as native.
-        let modes = allModes(for: displayID).filter { !$0.isPrivate }
-        let flagged = modes.filter { $0.flags.contains(.native) }
-        let candidates = flagged.isEmpty ? modes : flagged
+        let publicModes = modes.filter { !$0.isPrivate }
+        let flagged = publicModes.filter { $0.flags.contains(.native) }
+        let candidates = flagged.isEmpty ? publicModes : flagged
         guard let best = candidates.max(by: {
             ($0.pixelWidth * $0.pixelHeight) < ($1.pixelWidth * $1.pixelHeight)
         }) else { return nil }
         return PixelSize(width: best.pixelWidth, height: best.pixelHeight)
     }
 
-    // MARK: - Assembly
+    public static func nativePixelSize(for displayID: CGDirectDisplayID) -> PixelSize? {
+        nativePixelSize(in: allModes(for: displayID))
+    }
 
-    public static func display(_ displayID: CGDirectDisplayID, ordinal: Int) -> DisplayInfo {
-        DisplayInfo(
+    // MARK: - Snapshots
+
+    public static func snapshot(_ displayID: CGDirectDisplayID,
+                                ordinal: Int,
+                                includeUnusable: Bool = true) -> DisplaySnapshot {
+        let all = allModes(for: displayID, includeUnusable: true)
+        let native = nativePixelSize(in: all)
+        let visible = includeUnusable ? all : all.filter { $0.isUsable && !$0.isPrivate }
+
+        let info = DisplayInfo(
             id: displayID,
             ordinal: ordinal,
             name: name(for: displayID, ordinal: ordinal),
@@ -260,11 +282,24 @@ public enum DisplayManager {
             currentMode: currentMode(for: displayID),
             rotation: CGDisplayRotation(displayID),
             bounds: CGDisplayBounds(displayID),
-            nativePixelSize: nativePixelSize(for: displayID)
+            nativePixelSize: native
         )
+        return DisplaySnapshot(display: info, modes: visible)
+    }
+
+    public static func snapshots(includeUnusable: Bool = true) -> [DisplaySnapshot] {
+        onlineDisplayIDs().enumerated().map {
+            snapshot($0.element, ordinal: $0.offset, includeUnusable: includeUnusable)
+        }
+    }
+
+    // MARK: - Assembly
+
+    public static func display(_ displayID: CGDirectDisplayID, ordinal: Int) -> DisplayInfo {
+        snapshot(displayID, ordinal: ordinal).display
     }
 
     public static func allDisplays() -> [DisplayInfo] {
-        onlineDisplayIDs().enumerated().map { display($0.element, ordinal: $0.offset) }
+        snapshots().map(\.display)
     }
 }

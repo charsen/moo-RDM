@@ -140,6 +140,6 @@ enum CustomTimingEngine {
 
     static func isInstalled(for displayID: CGDirectDisplayID) -> Bool {
         guard let edid = DisplayEDIDReader.read(for: displayID) else { return false }
-        return DisplayOverrideInstaller.hasOverride(for: edid)
+        return DisplayOverrideInstaller.hasEDIDOverride(for: edid)
     }
 }

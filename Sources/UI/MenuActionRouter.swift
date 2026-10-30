@@ -37,6 +37,30 @@ final class DisplayBox: NSObject {
     }
 }
 
+/// A set of mode changes (and optional mirror links) committed in one
+/// transaction.
+final class MatchBox: NSObject {
+    let assignments: [ModeController.Assignment]
+    let mirroring: [CGDirectDisplayID: CGDirectDisplayID]
+
+    init(assignments: [ModeController.Assignment],
+         mirroring: [CGDirectDisplayID: CGDirectDisplayID] = [:]) {
+        self.assignments = assignments
+        self.mirroring = mirroring
+    }
+}
+
+/// One `scale-resolutions` entry, for the menu's remove submenu.
+final class ResolutionBox: NSObject {
+    let displayID: CGDirectDisplayID
+    let resolution: ScaledResolution
+
+    init(displayID: CGDirectDisplayID, resolution: ScaledResolution) {
+        self.displayID = displayID
+        self.resolution = resolution
+    }
+}
+
 // MARK: - Router
 
 /// Target for every menu item action.
@@ -51,6 +75,8 @@ final class MenuActionRouter: NSObject {
 
     let memory: ModeMemoryController
 
+    private var customResolutionWindow: CustomResolutionWindowController?
+
     init(memory: ModeMemoryController) {
         self.memory = memory
         super.init()
@@ -59,7 +85,9 @@ final class MenuActionRouter: NSObject {
     // MARK: - Helpers
 
     private func display(_ id: CGDirectDisplayID) -> DisplayInfo? {
-        DisplayManager.allDisplays().first { $0.id == id }
+        let ids = DisplayManager.onlineDisplayIDs()
+        guard let ordinal = ids.firstIndex(of: id) else { return nil }
+        return DisplayManager.snapshot(id, ordinal: ordinal).display
     }
 
     private func report(_ error: String) {
@@ -137,6 +165,86 @@ final class MenuActionRouter: NSObject {
             report(error.description)
         }
         onMenuNeedsRebuild?()
+    }
+
+    // MARK: - Multiple displays
+
+    private func applyMatch(_ box: MatchBox) {
+        switch ModeController.apply(box.assignments,
+                                    mirroring: box.mirroring,
+                                    permanently: Preferences.shared.permanentChanges) {
+        case .success:
+            for assignment in box.assignments {
+                memory.remember(displayID: assignment.displayID)
+            }
+        case .failure(let error):
+            report(error.description)
+        }
+        onMenuNeedsRebuild?()
+    }
+
+    @objc func matchDisplays(_ sender: NSMenuItem) {
+        guard let box = sender.representedObject as? MatchBox else { return }
+        applyMatch(box)
+    }
+
+    @objc func mirrorDisplays(_ sender: NSMenuItem) {
+        guard let box = sender.representedObject as? MatchBox else { return }
+        applyMatch(box)
+    }
+
+    @objc func stopMirroring(_ sender: NSMenuItem) {
+        let mirrored = DisplayManager.allDisplays().filter(\.isMirrored)
+        guard !mirrored.isEmpty else { return }
+
+        switch ModeController.apply([], unmirroring: mirrored.map(\.id),
+                                    permanently: Preferences.shared.permanentChanges) {
+        case .success:
+            break
+        case .failure(let error):
+            report(error.description)
+        }
+        onMenuNeedsRebuild?()
+    }
+
+    // MARK: - Scaled resolutions
+
+    @objc func addScaledResolution(_ sender: NSMenuItem) {
+        guard let box = sender.representedObject as? DisplayBox,
+              let display = display(box.displayID) else { return }
+
+        customResolutionWindow?.close()
+        let controller = CustomResolutionWindowController(display: display)
+        controller.onClose = { [weak self, weak controller] in
+            guard let self, let controller,
+                  self.customResolutionWindow === controller else { return }
+            self.customResolutionWindow = nil
+        }
+        customResolutionWindow = controller
+        controller.present()
+    }
+
+    @objc func removeScaledResolution(_ sender: NSMenuItem) {
+        guard let box = sender.representedObject as? ResolutionBox,
+              let edid = DisplayEDIDReader.read(for: box.displayID) else { return }
+
+        let resolution = box.resolution
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            do {
+                try DisplayOverrideInstaller.removeScaledResolutions([resolution], for: edid)
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    self.present(L10n.t("window.custom.removed.hint", resolution.label),
+                                 style: .informational,
+                                 title: L10n.t("window.custom.removed"))
+                    self.onMenuNeedsRebuild?()
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self?.report("\(error)")
+                }
+            }
+        }
     }
 
     // MARK: - View toggles

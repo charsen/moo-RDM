@@ -11,13 +11,23 @@ enum StatusMenuBuilder {
     static func build(into menu: NSMenu, router: MenuActionRouter) {
         menu.removeAllItems()
 
-        let displays = DisplayManager.allDisplays()
+        let snapshots = DisplayManager.snapshots(includeUnusable: Preferences.shared.showUnusableModes)
+        let hiddenTwins = hiddenStandardSizes(for: snapshots)
 
-        if displays.isEmpty {
+        if snapshots.isEmpty {
             menu.addItem(disabled(L10n.t("menu.noDisplays")))
         } else {
-            for display in displays {
-                menu.addItem(displayItem(display, router: router))
+            if snapshots.count >= 2,
+               let all = allDisplaysItem(snapshots: snapshots, hiddenTwins: hiddenTwins, router: router) {
+                menu.addItem(all)
+                menu.addItem(.separator())
+            }
+            let displays = snapshots.map(\.display)
+            for snapshot in snapshots {
+                menu.addItem(displayItem(snapshot,
+                                         hiddenTwins: hiddenTwins[snapshot.display.id] ?? [],
+                                         among: displays,
+                                         router: router))
             }
             menu.addItem(.separator())
         }
@@ -39,21 +49,44 @@ enum StatusMenuBuilder {
                             router, key: "q"))
     }
 
+    // MARK: - Titles
+
+    /// A display name that stays distinguishable when two identical panels are
+    /// attached. Two rows reading "BenQ PD2705U" are one row too many.
+    private static func displayTitle(_ display: DisplayInfo, among displays: [DisplayInfo]) -> String {
+        var title = display.name
+        if displays.filter({ $0.name == display.name }).count > 1 {
+            title += " #\(display.ordinal + 1)"
+        }
+        if displays.count > 1 && display.isMain {
+            title += " · " + L10n.t("menu.mainShort")
+        }
+        if display.isBuiltin {
+            title += " · " + L10n.t("menu.builtinShort")
+        }
+        return title
+    }
+
     // MARK: - Per-display submenu
 
-    private static func displayItem(_ display: DisplayInfo, router: MenuActionRouter) -> NSMenuItem {
-        let parent = NSMenuItem(title: display.menuTitle, action: nil, keyEquivalent: "")
+    private static func displayItem(_ snapshot: DisplaySnapshot,
+                                    hiddenTwins: Set<PixelSize>,
+                                    among displays: [DisplayInfo],
+                                    router: MenuActionRouter) -> NSMenuItem {
+        let display = snapshot.display
+        let parent = NSMenuItem(title: displayTitle(display, among: displays),
+                                action: nil, keyEquivalent: "")
         let submenu = NSMenu()
 
         // Header: what the display is doing right now.
         submenu.addItem(disabled("   " + display.currentDescription))
         if let native = display.nativePixelSize {
-            submenu.addItem(disabled("   native \(native.description)"))
+            submenu.addItem(disabled("   " + L10n.t("menu.native", native.description)))
         }
         submenu.addItem(.separator())
 
-        submenu.addItem(resolutionsItem(for: display, router: router))
-        if let refreshItem = refreshRateItem(for: display, router: router) {
+        submenu.addItem(resolutionsItem(for: snapshot, hiddenTwins: hiddenTwins, router: router))
+        if let refreshItem = refreshRateItem(for: snapshot, hiddenTwins: hiddenTwins, router: router) {
             submenu.addItem(refreshItem)
         }
         submenu.addItem(capabilitiesItem(for: display))
@@ -83,27 +116,55 @@ enum StatusMenuBuilder {
     // rates took four lines — and changing only the rate meant a submenu hop.
     // Now the geometry lives here and the rate lives next door.
 
-    /// Every mode the display reports, after the "show unusable" filter only.
+    /// Modes that belong in the menu for this display.
     ///
-    /// Read once per menu build: the mode table is not stable across a switch.
-    /// A panel driven at 30 Hz and the same panel driven at 60 Hz return
-    /// different tables — the 60 Hz HiDPI rows simply are not there while the
-    /// link runs at 30 — so anything derived from "which standard mode is
-    /// faster" changes shape under the user's feet. Callers that need the table
-    /// twice share this result instead of re-reading it.
-    private static func allModes(for display: DisplayInfo) -> [DisplayMode] {
-        DisplayManager.allModes(for: display.id,
-                                includeUnusable: Preferences.shared.showUnusableModes)
+    /// The snapshot already applied the "show unusable" filter. On top of that,
+    /// 1× rows whose output geometry is larger than the panel are hidden: a
+    /// `scale-resolutions` entry adds one of those next to the HiDPI size it was
+    /// meant to create, and selecting it asks the display for a timing it never
+    /// declared. The CLI still reports them; the menu should not offer a way to
+    /// black the screen.
+    private static func menuModes(_ snapshot: DisplaySnapshot,
+                                  hiddenTwins: Set<PixelSize> = []) -> [DisplayMode] {
+        let native = snapshot.display.nativePixelSize
+        return snapshot.modes.filter { mode in
+            if mode.isStandardOutputBeyondPanel(native) { return false }
+            if mode.isHiDPI { return true }
+            let backing = PixelSize(width: mode.pixelWidth, height: mode.pixelHeight)
+            return !hiddenTwins.contains(backing)
+        }
     }
 
-    private static func resolutionsItem(for display: DisplayInfo,
+    /// 1× twins of `scale-resolutions` entries this app added for each display.
+    ///
+    /// Read once per menu build. Each entry `4608 × 2592` creates both
+    /// `2304 × 1296 ⚡️` and a plain `4608 × 2592`; the second one has no timing
+    /// the panel ever declared and is hidden from the menu.
+    private static func hiddenStandardSizes(for snapshots: [DisplaySnapshot]) -> [CGDirectDisplayID: Set<PixelSize>] {
+        var result: [CGDirectDisplayID: Set<PixelSize>] = [:]
+        for snapshot in snapshots {
+            let id = snapshot.display.id
+            let sizes = DisplayOverrideInstaller.scaledResolutions(
+                vendor: CGDisplayVendorNumber(id),
+                product: CGDisplayModelNumber(id)
+            ).map {
+                PixelSize(width: $0.backingWidth, height: $0.backingHeight)
+            }
+            if !sizes.isEmpty { result[id] = Set(sizes) }
+        }
+        return result
+    }
+
+    private static func resolutionsItem(for snapshot: DisplaySnapshot,
+                                        hiddenTwins: Set<PixelSize>,
                                         router: MenuActionRouter) -> NSMenuItem {
+        let display = snapshot.display
         let parent = NSMenuItem(title: L10n.t("menu.resolution"), action: nil, keyEquivalent: "")
         let submenu = NSMenu()
 
         let current = display.currentMode
         let isFiltering = Preferences.shared.hiDPIOnly
-        let all = allModes(for: display)
+        let all = menuModes(snapshot, hiddenTwins: hiddenTwins)
         // macOS returns many modes that are indistinguishable in the menu; collapse
         // them before grouping so each geometry appears exactly once.
         let rows = isFiltering ? all.filter(\.isHiDPI) : all
@@ -148,6 +209,34 @@ enum StatusMenuBuilder {
             submenu.addItem(header)
         }
 
+        // Adding a size is a write, but not a mode change: nothing is applied
+        // until the display is re-attached. That is why it belongs in the menu,
+        // unlike a custom timing, which can black the screen the moment it lands.
+        submenu.addItem(.separator())
+        let add = action(L10n.t("menu.customResolution"),
+                         #selector(MenuActionRouter.addScaledResolution(_:)), router)
+        add.representedObject = DisplayBox(displayID: display.id)
+        submenu.addItem(add)
+
+        let custom = DisplayOverrideInstaller.scaledResolutions(
+            vendor: CGDisplayVendorNumber(display.id),
+            product: CGDisplayModelNumber(display.id)
+        )
+        if !custom.isEmpty {
+            let header = NSMenuItem(title: L10n.t("menu.removeCustomResolution"),
+                                    action: nil, keyEquivalent: "")
+            let child = NSMenu()
+            for resolution in custom {
+                let item = action(resolution.label,
+                                  #selector(MenuActionRouter.removeScaledResolution(_:)), router)
+                item.representedObject = ResolutionBox(displayID: display.id,
+                                                       resolution: resolution)
+                child.addItem(item)
+            }
+            header.submenu = child
+            submenu.addItem(header)
+        }
+
         parent.submenu = submenu
         return parent
     }
@@ -167,8 +256,11 @@ enum StatusMenuBuilder {
         // mean a resolution can be picked without the rate ever being in view,
         // and that is how a user ends up on a 30 Hz HiDPI size while believing
         // the panel cannot do 60.
-        let item = action(group.mode.menuTitle(withFastestRate: fastest.refreshRate),
-                          #selector(MenuActionRouter.selectMode(_:)), router)
+        var title = group.mode.menuTitle(withFastestRate: fastest.refreshRate)
+        if !fastest.isUsable {
+            title += " · " + L10n.t("menu.unsupported")
+        }
+        let item = action(title, #selector(MenuActionRouter.selectMode(_:)), router)
         item.representedObject = ModeBox(fastest)
         item.state = group.mode.resolutionKey == current?.resolutionKey ? .on : .off
         return item
@@ -183,14 +275,15 @@ enum StatusMenuBuilder {
     /// makes a working display look like a broken feature — a lone ticked entry
     /// says "this panel only does 60 Hz", which is the honest answer, rather than
     /// saying nothing at all.
-    private static func refreshRateItem(for display: DisplayInfo,
+    private static func refreshRateItem(for snapshot: DisplaySnapshot,
+                                        hiddenTwins: Set<PixelSize>,
                                         router: MenuActionRouter) -> NSMenuItem? {
-        guard let current = display.currentMode else { return nil }
+        guard let current = snapshot.display.currentMode else { return nil }
 
         // The unfiltered table: the HiDPI filter only decides which list a row
         // goes into, and the user sitting in a 1× mode still needs the rates of
         // the geometry they are actually on.
-        let modes = allModes(for: display).deduplicated(preferring: current)
+        let modes = menuModes(snapshot, hiddenTwins: hiddenTwins).deduplicated(preferring: current)
         let rates = modes
             .filter { $0.resolutionKey == current.resolutionKey }
             .sorted { $0.refreshRate > $1.refreshRate }
@@ -255,19 +348,146 @@ enum StatusMenuBuilder {
         return parent
     }
 
+    // MARK: - All displays
+
+    private static func allDisplaysItem(snapshots: [DisplaySnapshot],
+                                        hiddenTwins: [CGDirectDisplayID: Set<PixelSize>],
+                                        router: MenuActionRouter) -> NSMenuItem? {
+        let active = snapshots.filter { !$0.modes.isEmpty }
+        guard active.count >= 2 else { return nil }
+
+        let parent = NSMenuItem(title: L10n.t("menu.allDisplays"), action: nil, keyEquivalent: "")
+        let submenu = NSMenu()
+
+        let isFiltering = Preferences.shared.hiDPIOnly
+        func publicModes(_ snapshot: DisplaySnapshot) -> [DisplayMode] {
+            let hidden = hiddenTwins[snapshot.display.id] ?? []
+            return menuModes(snapshot, hiddenTwins: hidden).filter {
+                $0.cgMode != nil && !$0.isPrivate
+            }
+        }
+
+        let eligible = active.map(publicModes)
+        let common = DisplayMode.commonResolutions(among: eligible, hiDPIOnly: isFiltering)
+
+        let same = NSMenuItem(title: L10n.t("menu.sameResolution"), action: nil, keyEquivalent: "")
+        let sameMenu = NSMenu()
+        if common.isEmpty {
+            sameMenu.addItem(disabled(L10n.t("menu.noCommonResolution")))
+        }
+
+        for entry in common {
+            let assignments = assignments(for: entry.choice,
+                                          rate: entry.refreshRate,
+                                          in: active,
+                                          hiddenTwins: hiddenTwins)
+            guard assignments.count == active.count else { continue }
+            guard let representative = eligible.flatMap({ $0 }).first(where: {
+                $0.width == entry.choice.width
+                    && $0.height == entry.choice.height
+                    && $0.isHiDPI == entry.choice.isHiDPI
+                    && abs($0.refreshRate - Double(entry.refreshRate)) < 0.5
+            }) else { continue }
+
+            let item = action(representative.menuTitle(withFastestRate: Double(entry.refreshRate)),
+                              #selector(MenuActionRouter.matchDisplays(_:)), router)
+            item.representedObject = MatchBox(assignments: assignments)
+            item.state = active.allSatisfy {
+                $0.display.currentMode?.resolutionKey == representative.resolutionKey
+            } ? .on : .off
+            sameMenu.addItem(item)
+        }
+        same.submenu = sameMenu
+        submenu.addItem(same)
+
+        // Match the main display: one click for "make everything look like this".
+        if let main = active.first(where: { $0.display.isMain }) ?? active.first,
+           let current = main.display.currentMode {
+            let choice = ResolutionChoice(width: current.width,
+                                          height: current.height,
+                                          isHiDPI: current.isHiDPI)
+            let rate = Int(current.refreshRate.rounded())
+            let currentAssignments = assignments(for: choice, rate: rate, in: active,
+                                                 hiddenTwins: hiddenTwins)
+            let missing = active.filter { snapshot in
+                !currentAssignments.contains { $0.displayID == snapshot.display.id }
+            }.map(\.display.name)
+
+            let item = action(L10n.t("menu.matchMain"),
+                              #selector(MenuActionRouter.matchDisplays(_:)), router)
+            if missing.isEmpty {
+                item.representedObject = MatchBox(assignments: currentAssignments)
+                item.toolTip = L10n.t("menu.matchMain.hint")
+            } else {
+                item.isEnabled = false
+                item.toolTip = L10n.t("menu.missingOn", missing.joined(separator: ", "))
+            }
+            submenu.addItem(item)
+
+            submenu.addItem(.separator())
+
+            // Mirror everything onto the main display. The master's timing has to
+            // be valid on every slave, so this is checked up front and the reason
+            // is printed in the tooltip rather than failing after the click.
+            let mirrorItem = action(L10n.t("menu.mirrorAll"),
+                                    #selector(MenuActionRouter.mirrorDisplays(_:)), router)
+            if missing.isEmpty {
+                let mirror = Dictionary(uniqueKeysWithValues: active
+                    .filter { $0.display.id != main.display.id }
+                    .map { ($0.display.id, main.display.id) })
+                mirrorItem.representedObject = MatchBox(assignments: currentAssignments,
+                                                        mirroring: mirror)
+            } else {
+                mirrorItem.isEnabled = false
+                mirrorItem.toolTip = L10n.t("menu.missingOn", missing.joined(separator: ", "))
+            }
+            submenu.addItem(mirrorItem)
+        }
+
+        if active.contains(where: { $0.display.isMirrored }) {
+            submenu.addItem(action(L10n.t("menu.stopMirroring"),
+                                   #selector(MenuActionRouter.stopMirroring(_:)), router))
+        }
+
+        parent.submenu = submenu
+        return parent
+    }
+
+    private static func assignments(for choice: ResolutionChoice,
+                                    rate: Int,
+                                    in snapshots: [DisplaySnapshot],
+                                    hiddenTwins: [CGDirectDisplayID: Set<PixelSize>]) -> [ModeController.Assignment] {
+        snapshots.compactMap { snapshot in
+            let hidden = hiddenTwins[snapshot.display.id] ?? []
+            let matches = menuModes(snapshot, hiddenTwins: hidden)
+                .filter {
+                    $0.cgMode != nil && !$0.isPrivate
+                        && $0.width == choice.width && $0.height == choice.height
+                        && $0.isHiDPI == choice.isHiDPI
+                        && abs($0.refreshRate - Double(rate)) < 0.5
+                }
+            let candidate = matches.sorted { a, b in
+                if a.isUsable != b.isUsable { return a.isUsable }
+                return a.modeID < b.modeID
+            }.first
+            guard let candidate else { return nil }
+            return ModeController.Assignment(displayID: snapshot.display.id, mode: candidate)
+        }
+    }
+
     // MARK: - Hardware limits
 
     /// What the panel declares and what the link allows, in one read-only place.
-    ///
-    /// This is deliberately informational. Writing an override asks for an
-    /// administrator password and can black the screen, so it stays behind the
-    /// CLI where a timeout and an automatic rollback already exist — a menu click
-    /// is not the right place to start that chain.
     ///
     /// The contents are built when the submenu is opened, not here. Filling them
     /// reads the EDID through IOKit, enumerates every mode and queries a private
     /// class — 40–60 ms measured per display. Paying that on every `menuWillOpen`,
     /// for a submenu most openings never touch, is what makes the menu sticky.
+    ///
+    /// Writing a custom *timing* still lives behind the CLI, because that path can
+    /// black the screen the moment it is installed. Adding a scaled *resolution*
+    /// does not: it only adds a selectable row, and lives in the Resolution
+    /// submenu instead.
     private static func capabilitiesItem(for display: DisplayInfo) -> NSMenuItem {
         let parent = NSMenuItem(title: L10n.t("menu.capabilities"), action: nil, keyEquivalent: "")
         let submenu = NSMenu()
@@ -307,15 +527,20 @@ enum StatusMenuBuilder {
                 submenu.addItem(disabled(L10n.t("menu.capabilities.hidden", rate.description)))
             }
         }
-        if DisplayOverrideInstaller.hasOverride(for: edid) {
+        let scaled = DisplayOverrideInstaller.scaledResolutions(for: edid)
+        if DisplayOverrideInstaller.hasEDIDOverride(for: edid) {
             submenu.addItem(disabled(L10n.t("menu.capabilities.override")))
+        }
+        if !scaled.isEmpty {
+            submenu.addItem(disabled(L10n.t("menu.capabilities.scaled",
+                                            scaled.map(\.label).joined(separator: ", "))))
         }
 
         submenu.addItem(.separator())
         // Same reasoning as the CLI gate: a hint that leads to a no-op is worse
         // than no hint at all, so the menu says which of the two situations the
         // machine is in before the user goes looking for the command.
-        submenu.addItem(disabled(L10n.t(DisplayOverrideInstaller.support.isAvailable
+        submenu.addItem(disabled(L10n.t(DisplayOverrideInstaller.support(for: .edidBlob).isAvailable
                                         ? "menu.capabilities.cliHint"
                                         : "menu.capabilities.inert")))
     }
@@ -383,6 +608,7 @@ enum StatusMenuBuilder {
         let item = action(L10n.t("menu.hiDPIOnly"),
                           #selector(MenuActionRouter.toggleHiDPIOnly(_:)), router)
         item.state = Preferences.shared.hiDPIOnly ? .on : .off
+        item.toolTip = L10n.t("menu.hiDPIOnly.hint")
         return item
     }
 

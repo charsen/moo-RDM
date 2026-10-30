@@ -20,9 +20,6 @@ final class ModeMemoryController {
     private static let restoreDelay: TimeInterval = 1.5
 
     private var isObserving = false
-    /// Set while we are the ones changing the mode, so we do not react to ourselves.
-    private var isApplying = false
-
     private var pendingRestore: DispatchWorkItem?
 
     deinit { stop() }
@@ -54,6 +51,14 @@ final class ModeMemoryController {
         pendingRestore = nil
     }
 
+    /// Restores remembered modes once after launch.
+    ///
+    /// `start()` only registers callbacks, so before this a quit-and-relaunch
+    /// dropped the "remember" promise until the display was re-attached.
+    func restoreAfterLaunch() {
+        scheduleRestore()
+    }
+
     // MARK: - Recording
 
     /// Records the display's current mode as the one to restore later.
@@ -68,9 +73,10 @@ final class ModeMemoryController {
         Preferences.shared.remember(remembered, for: display.identity.key)
     }
 
-    func rememberAll() {
-        guard Preferences.shared.rememberPerDisplay else { return }
-        for display in DisplayManager.allDisplays() { remember(display: display) }
+    func remember(displayID: CGDirectDisplayID) {
+        let ids = DisplayManager.onlineDisplayIDs()
+        guard let ordinal = ids.firstIndex(of: displayID) else { return }
+        remember(display: DisplayManager.snapshot(displayID, ordinal: ordinal).display)
     }
 
     // MARK: - Restoring
@@ -84,48 +90,66 @@ final class ModeMemoryController {
         let remembered = Preferences.shared.rememberedModes
         guard !remembered.isEmpty else { return 0 }
 
-        isApplying = true
-        defer { isApplying = false }
-
         var changed = 0
         for display in DisplayManager.allDisplays() {
-            guard let target = remembered[display.identity.key] else { continue }
-
-            // Already correct? Nothing to do.
-            if let current = display.currentMode,
-               current.width == target.width,
-               current.height == target.height,
-               abs(current.scale - target.scale) < 0.01,
-               target.refreshRate == 0 || abs(current.refreshRate - target.refreshRate) < 0.5 {
-                continue
-            }
-
-            let result = ModeController.applyResolution(on: display.id,
-                                                       width: target.width,
-                                                       height: target.height,
-                                                       scale: target.scale,
-                                                       refreshRate: target.refreshRate > 0 ? target.refreshRate : nil,
-                                                       permanently: Preferences.shared.permanentChanges,
-                                                       includeUnusable: true)
-            if case .success = result { changed += 1 }
+            // The unit-qualified key is new; fall back once to the key earlier
+            // versions wrote so an upgrade does not silently forget everything.
+            guard let target = remembered[display.identity.key]
+                    ?? remembered[display.identity.legacyKey]
+            else { continue }
+            if restore(display: display, target: target) { changed += 1 }
         }
         return changed
+    }
+
+    private func restore(display: DisplayInfo, target: RememberedMode) -> Bool {
+        var current = display
+
+        if let rotation = target.rotation, rotation > 0, abs(current.rotation - rotation) >= 0.5 {
+            guard case .success = DisplayRotationController.setRotation(rotation, on: current.id) else {
+                return apply(target, to: current)
+            }
+            if let refreshed = DisplayManager.allDisplays().first(where: { $0.id == current.id }) {
+                current = refreshed
+            }
+        }
+
+        return apply(target, to: current)
+    }
+
+    private func apply(_ target: RememberedMode, to display: DisplayInfo) -> Bool {
+        if let current = display.currentMode,
+           current.width == target.width,
+           current.height == target.height,
+           abs(current.scale - target.scale) < 0.01,
+           target.refreshRate == 0 || abs(current.refreshRate - target.refreshRate) < 0.5 {
+            return false
+        }
+
+        let result = ModeController.applyResolution(on: display.id,
+                                                   width: target.width,
+                                                   height: target.height,
+                                                   scale: target.scale,
+                                                   refreshRate: target.refreshRate > 0 ? target.refreshRate : nil,
+                                                   permanently: Preferences.shared.permanentChanges,
+                                                   includeUnusable: true)
+        if case .success = result { return true }
+        return false
     }
 
     // MARK: - Reacting to system changes
 
     private func handleReconfiguration(display: CGDirectDisplayID,
                                        flags: CGDisplayChangeSummaryFlags) {
-        // Ignore the churn our own changes cause.
-        guard !isApplying else { return }
-        guard Preferences.shared.rememberPerDisplay else { return }
+        // The menu has to hear about every topology change, even when mode memory
+        // is switched off — the two are unrelated settings.
+        NotificationCenter.default.post(name: .rdmDisplayConfigurationChanged, object: nil)
 
+        guard Preferences.shared.rememberPerDisplay else { return }
         // A display was attached: schedule a restore once the topology settles.
         if flags.contains(.addFlag) {
             scheduleRestore()
         }
-
-        NotificationCenter.default.post(name: .rdmDisplayConfigurationChanged, object: nil)
     }
 
     private func scheduleRestore() {

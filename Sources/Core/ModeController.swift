@@ -10,11 +10,23 @@ import Foundation
 /// Verified on macOS 27 / arm64: all three calls return `kCGErrorSuccess`.
 public enum ModeController {
 
+    /// One display's target mode inside a multi-display transaction.
+    public struct Assignment {
+        public let displayID: CGDirectDisplayID
+        public let mode: DisplayMode
+
+        public init(displayID: CGDirectDisplayID, mode: DisplayMode) {
+            self.displayID = displayID
+            self.mode = mode
+        }
+    }
+
     public enum ApplyError: Error, CustomStringConvertible {
         case beginFailed(CGError)
         case configureFailed(CGError)
         case completeFailed(CGError)
         case modeNotFound(String)
+        case privateModeInBatch
 
         public var description: String {
             switch self {
@@ -26,6 +38,8 @@ public enum ModeController {
                 return L10n.t("error.setModeFailed", Int32(code.rawValue))
             case .modeNotFound(let description):
                 return L10n.t("error.noSuchMode", description)
+            case .privateModeInBatch:
+                return L10n.t("error.privateModeBatch")
             }
         }
     }
@@ -66,6 +80,73 @@ public enum ModeController {
         let complete = CGCompleteDisplayConfiguration(
             config, permanently ? .permanently : .forSession
         )
+        guard complete == .success else {
+            return .failure(.completeFailed(complete))
+        }
+        return .success(())
+    }
+
+    // MARK: - Multiple displays
+
+    /// Applies several mode changes in **one** display configuration.
+    ///
+    /// A per-display loop of `apply` would commit each display separately: the
+    /// desktop reflows between them and a failure halfway leaves half the set
+    /// changed. One transaction means the set either lands together or not at
+    /// all. Mirroring rides in the same transaction, because setting a slave's
+    /// mode outside the mirror set it is about to join is what produces the
+    /// "mirroring unmirrored itself" surprise.
+    @discardableResult
+    public static func apply(_ assignments: [Assignment],
+                             mirroring mirror: [CGDirectDisplayID: CGDirectDisplayID] = [:],
+                             unmirroring unmirror: [CGDirectDisplayID] = [],
+                             permanently: Bool = false) -> Result<Void, ApplyError> {
+        guard !assignments.isEmpty || !mirror.isEmpty || !unmirror.isEmpty else { return .success(()) }
+        // Private-table modes have no `CGDisplayMode` and are configured through a
+        // separate call that opens its own transaction. A batch mixing the two
+        // cannot be atomic, so it is refused rather than half-applied.
+        guard assignments.allSatisfy({ $0.mode.cgMode != nil }) else {
+            return .failure(.privateModeInBatch)
+        }
+
+        var config: CGDisplayConfigRef?
+        let begin = CGBeginDisplayConfiguration(&config)
+        guard begin == .success, let config else {
+            return .failure(.beginFailed(begin))
+        }
+
+        for assignment in assignments {
+            guard let cgMode = assignment.mode.cgMode else {
+                CGCancelDisplayConfiguration(config)
+                return .failure(.privateModeInBatch)
+            }
+            let result = CGConfigureDisplayWithDisplayMode(config,
+                                                           assignment.displayID,
+                                                           cgMode,
+                                                           nil)
+            guard result == .success else {
+                CGCancelDisplayConfiguration(config)
+                return .failure(.configureFailed(result))
+            }
+        }
+
+        for (slave, master) in mirror {
+            let result = CGConfigureDisplayMirrorOfDisplay(config, slave, master)
+            guard result == .success else {
+                CGCancelDisplayConfiguration(config)
+                return .failure(.configureFailed(result))
+            }
+        }
+
+        for displayID in unmirror {
+            let result = CGConfigureDisplayMirrorOfDisplay(config, displayID, kCGNullDirectDisplay)
+            guard result == .success else {
+                CGCancelDisplayConfiguration(config)
+                return .failure(.configureFailed(result))
+            }
+        }
+
+        let complete = CGCompleteDisplayConfiguration(config, permanently ? .permanently : .forSession)
         guard complete == .success else {
             return .failure(.completeFailed(complete))
         }

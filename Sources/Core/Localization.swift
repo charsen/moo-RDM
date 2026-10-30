@@ -62,12 +62,23 @@ public enum L10n {
 
         "menu.display": "Display %d",
         "menu.mainDisplay": "Main Display",
-        "menu.builtIn": "Built-in",
+        "menu.mainShort": "Main",
+        "menu.builtinShort": "Built-in",
         "menu.noDisplays": "No displays detected",
         "menu.noModes": "No modes match the current filter",
-        "menu.currentResolution": "Current: %@",
+        "menu.native": "native %@",
 
         "menu.resolution": "Resolution",
+        "menu.allDisplays": "All displays",
+        "menu.sameResolution": "Same resolution",
+        "menu.matchMain": "Match main display",
+        "menu.matchMain.hint": "Apply the main display's current resolution to every display",
+        "menu.mirrorAll": "Mirror all displays to main",
+        "menu.stopMirroring": "Stop mirroring",
+        "menu.noCommonResolution": "No resolution is available on every display",
+        "menu.missingOn": "Not available on %@",
+        "menu.customResolution": "Add scaled resolution…",
+        "menu.removeCustomResolution": "Remove scaled resolution",
         "menu.refreshRate": "Refresh rate",
         "menu.standardResolutions": "Standard resolutions (1×)",
         "menu.refreshAtGeometry": "%@ @ %@",
@@ -76,12 +87,12 @@ public enum L10n {
         "menu.showAllModes": "Show modes macOS hides",
         "menu.showAllModes.hint": "Includes modes not usable for the desktop GUI",
         "menu.hiDPIOnly": "HiDPI modes only",
+        "menu.hiDPIOnly.hint": "Keep the main list HiDPI-only; standard entries move to their own submenu",
         "menu.preferences": "Preferences…",
         "menu.about": "About RDM-ARM",
         "menu.quit": "Quit RDM-ARM",
         "menu.resetToDefault": "Reset to system default",
-        "menu.unsupported": "Not supported by this display",
-        "menu.autoApplied": "Applied automatically",
+        "menu.unsupported": "not for desktop GUI",
 
         "menu.capabilities": "EDID and refresh limits",
         "menu.capabilities.link": "Budget: %@",
@@ -90,8 +101,26 @@ public enum L10n {
         "menu.capabilities.nothingHidden": "Panel declares nothing beyond the listed modes",
         "menu.capabilities.noEDID": "EDID not readable for this display",
         "menu.capabilities.override": "Override installed",
+        "menu.capabilities.scaled": "Scaled resolutions: %@",
         "menu.capabilities.cliHint": "Beyond-limit rates need the CLI: rdm-arm --custom-timing",
         "menu.capabilities.inert": "Beyond-limit rates need an EDID override — Apple silicon ignores it, so this machine can only report",
+
+        "window.custom.title": "Add scaled resolution — %@",
+        "window.custom.display": "%@ · native %@",
+        "window.custom.width": "Width",
+        "window.custom.height": "Height",
+        "window.custom.backing": "Backing store %d × %d (2×)",
+        "window.custom.add": "Add",
+        "window.custom.remove": "Remove",
+        "window.custom.installed": "Custom resolutions",
+        "window.custom.none": "None yet",
+        "window.custom.note": "Writes a display override, which needs one administrator password. macOS only reads it when the display is attached, so reconnect the display (or restart) before the new size appears in the Resolution menu.",
+        "window.custom.close": "Close",
+        "window.custom.written": "Override written",
+        "window.custom.written.hint": "%@ was added. Reconnect the display or restart to make it appear in the Resolution menu.",
+        "window.custom.removed": "Override updated",
+        "window.custom.removed.hint": "%@ was removed. Reconnect the display or restart to drop it from the menu.",
+        "window.custom.busy": "Writing…",
 
         "rotation.0": "Standard (0°)",
         "rotation.90": "90°",
@@ -104,22 +133,30 @@ public enum L10n {
         "settings.about": "About",
 
         "settings.language": "Language",
-        "settings.launchAtLogin": "Launch at login",
-        "settings.launchAtLogin.hint": "Start RDM-ARM automatically when you log in",
         "settings.showUnusable": "List modes macOS hides",
         "settings.showUnusable.hint": "Show modes marked as unusable for the desktop GUI. These are the modes RDM is known for.",
-        "settings.hiDPIOnly": "Only show HiDPI modes",
+        "settings.hiDPIOnly": "HiDPI modes only",
         "settings.hiDPIOnly.hint": "Keep the main list HiDPI-only; standard entries move to their own submenu",
+        "settings.section.changes": "Mode changes",
         "settings.permanent": "Apply changes permanently",
         "settings.permanent.hint": "Persist the chosen mode across restarts instead of only for this session",
+        "settings.section.memory": "Mode memory",
         "settings.rememberPerDisplay": "Remember mode per display",
         "settings.rememberPerDisplay.hint": "Restore your chosen resolution when a display is reconnected",
         "settings.restoreOnWake": "Restore modes after wake",
+        "settings.section.private": "Private interfaces",
         "settings.optionalModule": "Enable rotation, brightness and hidden HiDPI",
         "settings.optionalModule.hint": "These need private system interfaces. Rotation and brightness use them to write; hidden HiDPI lists the supersampled resolutions macOS generates but never exposes. Turn this off to keep the app strictly on public APIs.",
         "settings.hiddenHiDPI": "Hidden HiDPI modes",
+        "settings.diagnostics.title": "Diagnostics",
         "settings.diagnostics": "Copy diagnostics",
         "settings.diagnostics.done": "Copied",
+        "settings.status.unavailable": "unavailable on this system",
+        "settings.status.available": "available",
+        "settings.status.disabled": "disabled",
+        "settings.status.brightness": "available on %d display(s)",
+        "settings.status.hiddenHiDPI": "%d extra mode(s) offered",
+        "settings.status.none": "none offered",
 
         "about.version": "Version %@",
         "about.credits": "A native Apple silicon rework of RDM by Avi Alkalay.",
@@ -133,6 +170,10 @@ public enum L10n {
         "error.rotationFailed": "Could not set rotation (error %d)",
         "error.rotationUnsupported": "This display does not support rotation",
         "error.brightnessUnsupported": "This display does not support software brightness control",
+        "error.privateModeBatch": "A batch change cannot include a mode that only exists in the private table",
+        "error.resolutionRange": "Width and height must be between 320 and 8192 points (backing store up to 16384)",
+        "error.resolutionAlreadyOffered": "%d × %d is already available at %d Hz",
+        "error.resolutionAlreadyInstalled": "%@ is already installed",
 
         "error.timingOptionalDisabled": "The optional module is off — turn it on in Preferences first",
         "error.timingNoEDID": "Could not read this display's EDID",
@@ -189,20 +230,28 @@ public enum L10n {
               --capabilities    Summarise hidden rates and the hardware ceiling
               --refresh-audit   Explain gaps between declared, offered and possible rates
               --custom-timing   Synthesise <width>x<height>@<hz>; add --write to install
-              --write           Install the display override (asks for admin rights)
+              --write           Install the EDID override (asks for admin rights)
               --keep            Keep the override instead of rolling it back
-              --revert          Remove a previously installed override
+              --revert          Remove a previously installed EDID override
               --sleep-wake      Force re-enumeration with a display power cycle
               --timeout <n>     Seconds before the automatic rollback (default 20)
               --emit-edid <p>   Write the patched EDID to <p> for inspection
               --selftest-timing Run the EDID and timing self test, then exit
-              --all             Include modes macOS hides from the GUI
+              --all             Include modes macOS hides from the GUI (the CLI default)
+              --usable-only     Exclude modes macOS hides from the GUI
               --hidpi           Only consider HiDPI modes
+              --permanent       Persist the chosen mode across restarts
               --json            Machine-readable output
           -v, --version         Print version
               --help            Show this help
               --selftest        Run GUI diagnostics (status item + menu) and exit
               --roundtrip       With --selftest: change the mode and roll it back
+
+        EXIT CODES
+          0  success (no arguments also prints this help)
+          1  runtime failure (no display, unreadable EDID, refused timing)
+          2  bad arguments
+          3  --write refused: an EDID override is ignored on Apple silicon
 
         EXAMPLES
           rdm-arm -w 1920 -h 1080 -s 2
@@ -221,16 +270,27 @@ public enum L10n {
 
     private static let chinese: [String: String] = [
         "app.name": "RDM-ARM",
-        "common.ok": "好",
+        "common.ok": "确定",
 
         "menu.display": "显示器 %d",
         "menu.mainDisplay": "主显示器",
-        "menu.builtIn": "内置",
+        "menu.mainShort": "主屏",
+        "menu.builtinShort": "内建",
         "menu.noDisplays": "未检测到显示器",
         "menu.noModes": "当前筛选条件下没有可用的模式",
-        "menu.currentResolution": "当前：%@",
+        "menu.native": "原生 %@",
 
         "menu.resolution": "分辨率",
+        "menu.allDisplays": "所有显示器",
+        "menu.sameResolution": "相同分辨率",
+        "menu.matchMain": "与主显示器一致",
+        "menu.matchMain.hint": "把主显示器当前的分辨率应用到每一块屏",
+        "menu.mirrorAll": "镜像所有显示器到主屏",
+        "menu.stopMirroring": "停止镜像",
+        "menu.noCommonResolution": "没有一块屏都支持的分辨率",
+        "menu.missingOn": "%@ 不支持",
+        "menu.customResolution": "添加缩放分辨率…",
+        "menu.removeCustomResolution": "移除缩放分辨率",
         "menu.refreshRate": "刷新率",
         "menu.standardResolutions": "标准分辨率（非 HiDPI）",
         "menu.refreshAtGeometry": "%@ @ %@",
@@ -239,22 +299,40 @@ public enum L10n {
         "menu.showAllModes": "显示 macOS 隐藏的模式",
         "menu.showAllModes.hint": "包含无法用于桌面 GUI 的模式",
         "menu.hiDPIOnly": "仅显示 HiDPI 模式",
+        "menu.hiDPIOnly.hint": "主列表只留 HiDPI，标准分辨率收进单独的子菜单",
         "menu.preferences": "偏好设置…",
         "menu.about": "关于 RDM-ARM",
         "menu.quit": "退出 RDM-ARM",
         "menu.resetToDefault": "恢复系统默认",
-        "menu.unsupported": "此显示器不支持",
-        "menu.autoApplied": "已自动应用",
+        "menu.unsupported": "不适于桌面 GUI",
 
         "menu.capabilities": "EDID 与刷新上限",
         "menu.capabilities.link": "带宽：%@",
         "menu.capabilities.native": "原生时序：%@",
         "menu.capabilities.hidden": "已声明但未提供：%@",
-        "menu.capabilities.nothingHidden": "除已列出的模式外，面板没有声明更多刷新率",
+        "menu.capabilities.nothingHidden": "面板没有声明列表之外的模式",
         "menu.capabilities.noEDID": "读不到此显示器的 EDID",
         "menu.capabilities.override": "已安装 override",
+        "menu.capabilities.scaled": "自定义缩放分辨率：%@",
         "menu.capabilities.cliHint": "超出上限的刷新率需用命令行：rdm-arm --custom-timing",
         "menu.capabilities.inert": "超出上限的刷新率需改写 EDID——Apple 芯片不读取该 override，本机只能看不能改",
+
+        "window.custom.title": "添加缩放分辨率 — %@",
+        "window.custom.display": "%@ · 原生 %@",
+        "window.custom.width": "宽",
+        "window.custom.height": "高",
+        "window.custom.backing": "渲染尺寸 %d × %d（2×）",
+        "window.custom.add": "添加",
+        "window.custom.remove": "移除",
+        "window.custom.installed": "自定义分辨率",
+        "window.custom.none": "还没有",
+        "window.custom.note": "会写入显示器 override，需要一次管理员密码。macOS 只在显示器重新挂载时读取它，所以新尺寸要等重新插拔显示器（或重启）后才会出现在分辨率菜单里。",
+        "window.custom.close": "关闭",
+        "window.custom.written": "已写入 override",
+        "window.custom.written.hint": "%@ 已添加。重新插拔显示器或重启后，它会出现在分辨率菜单里。",
+        "window.custom.removed": "已更新 override",
+        "window.custom.removed.hint": "%@ 已移除。重新插拔显示器或重启后，它会从菜单里消失。",
+        "window.custom.busy": "正在写入…",
 
         "rotation.0": "标准 (0°)",
         "rotation.90": "90°",
@@ -267,22 +345,30 @@ public enum L10n {
         "settings.about": "关于",
 
         "settings.language": "界面语言",
-        "settings.launchAtLogin": "登录时启动",
-        "settings.launchAtLogin.hint": "登录后自动启动 RDM-ARM",
         "settings.showUnusable": "列出 macOS 隐藏的模式",
         "settings.showUnusable.hint": "显示被标记为不可用于桌面 GUI 的模式，这正是 RDM 的看家功能。",
         "settings.hiDPIOnly": "仅显示 HiDPI 模式",
         "settings.hiDPIOnly.hint": "主列表只留 HiDPI，标准分辨率收进单独的子菜单",
+        "settings.section.changes": "模式更改",
         "settings.permanent": "永久应用更改",
         "settings.permanent.hint": "所选模式在重启后依然生效，而非仅本次会话有效",
+        "settings.section.memory": "模式记忆",
         "settings.rememberPerDisplay": "按显示器记忆模式",
         "settings.rememberPerDisplay.hint": "显示器重新接入时恢复你选择的分辨率",
         "settings.restoreOnWake": "唤醒后恢复模式",
+        "settings.section.private": "私有接口",
         "settings.optionalModule": "启用旋转、亮度与隐藏 HiDPI",
         "settings.optionalModule.hint": "这些功能依赖系统私有接口：旋转与亮度用它写入，隐藏 HiDPI 则用来列出 macOS 生成但未公开的超采样分辨率。关闭后应用将严格只使用公开 API。",
         "settings.hiddenHiDPI": "隐藏 HiDPI 模式",
+        "settings.diagnostics.title": "诊断信息",
         "settings.diagnostics": "复制诊断信息",
         "settings.diagnostics.done": "已复制",
+        "settings.status.unavailable": "此系统不支持",
+        "settings.status.available": "可用",
+        "settings.status.disabled": "已关闭",
+        "settings.status.brightness": "%d 块显示器可用",
+        "settings.status.hiddenHiDPI": "额外提供 %d 个模式",
+        "settings.status.none": "没有额外模式",
 
         "about.version": "版本 %@",
         "about.credits": "基于 Avi Alkalay 的 RDM 重写的原生 Apple 芯片版本。",
@@ -296,6 +382,10 @@ public enum L10n {
         "error.rotationFailed": "无法设置旋转（错误 %d）",
         "error.rotationUnsupported": "此显示器不支持旋转",
         "error.brightnessUnsupported": "此显示器不支持软件亮度控制",
+        "error.privateModeBatch": "批量切换不能包含只存在于私有模式表里的模式",
+        "error.resolutionRange": "宽和高需要在 320 到 8192 点之间（渲染尺寸不超过 16384）",
+        "error.resolutionAlreadyOffered": "%d × %d 已经可用（%d Hz）",
+        "error.resolutionAlreadyInstalled": "%@ 已经安装",
 
         "error.timingOptionalDisabled": "可选模块已关闭，请先在偏好设置中打开",
         "error.timingNoEDID": "读不到此显示器的 EDID",
@@ -352,20 +442,28 @@ public enum L10n {
               --capabilities    汇总隐藏刷新率与硬件上限
               --refresh-audit   逐分辨率说明「声明 / 系统给出 / 链路可行」的差距
               --custom-timing   合成 <宽>x<高>@<Hz>；加 --write 才会写入
-              --write           写入显示器 override（需要管理员授权）
+              --write           写入 EDID override（需要管理员授权）
               --keep            保留 override，不自动回滚
-              --revert          移除之前安装的 override
+              --revert          移除之前安装的 EDID override
               --sleep-wake      用显示器断电/上电强制重新枚举
               --timeout <n>     自动回滚前的秒数（默认 20）
               --emit-edid <p>   把打好补丁的 EDID 写到 <p> 以便检查
               --selftest-timing 运行 EDID 与时序自检后退出
-              --all             包含 macOS 从 GUI 隐藏的模式
+              --all             包含 macOS 从 GUI 隐藏的模式（命令行默认）
+              --usable-only     排除 macOS 从 GUI 隐藏的模式
               --hidpi           只考虑 HiDPI 模式
+              --permanent       所选模式在重启后依然生效
               --json            输出机器可读格式
           -v, --version         显示版本
               --help            显示帮助
               --selftest        运行 GUI 自检（菜单栏图标 + 菜单）并退出
               --roundtrip       配合 --selftest：真实切换一次分辨率再还原
+
+        退出码
+          0  成功（不带参数也会打印本帮助）
+          1  运行失败（没有显示器、读不到 EDID、时序被拒绝）
+          2  参数错误
+          3  --write 被拒绝：Apple 芯片不读取 EDID override
 
         示例
           rdm-arm -w 1920 -h 1080 -s 2

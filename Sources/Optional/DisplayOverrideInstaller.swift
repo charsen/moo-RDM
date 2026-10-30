@@ -2,16 +2,23 @@ import CoreGraphics
 import Darwin
 import Foundation
 
-/// Installs and removes a display override — the only mechanism on Apple silicon
-/// for teaching macOS a timing the panel did not advertise.
+/// Installs and removes a display override under
+/// `/Library/Displays/Contents/Resources/Overrides/`.
 ///
-/// How it works: `/Library/Displays/Contents/Resources/Overrides/` mirrors the
-/// system's own display database. A file named after the panel's EDID vendor and
-/// product replaces the panel's EDID blob for the whole system, and macOS then
-/// enumerates modes from *that* blob instead. This is exactly the shape Apple
-/// itself ships — e.g.
-/// `/System/Library/Displays/Contents/Resources/Overrides/DisplayVendorID-10ac/DisplayProductID-4093`
-/// is a three-key plist holding `IODisplayEDID`.
+/// The directory mirrors the system's own display database. A file named after
+/// the panel's EDID vendor and product carries two independent kinds of data:
+///
+/// | Key | What it changes | Apple silicon |
+/// |---|---|---|
+/// | `IODisplayEDID` | replaces the panel's EDID blob | **ignored** — measured on M4 Max; the live EDID stays the panel's own |
+/// | `scale-resolutions` | adds point sizes to the mode table | **honoured** — measured on M4 Max; 26 → 28 modes after re-attach |
+///
+/// Because the two mechanisms behave differently, availability is answered per
+/// mechanism. Treating "Apple silicon ignores overrides" as one fact would
+/// disable the one route that actually works.
+///
+/// Every write merges into the existing payload instead of replacing it, so an
+/// EDID patch cannot silently delete a scaled-resolution entry (or vice versa).
 ///
 /// `/Library` (not `/System`) is used on purpose: it is the user-installable
 /// layer, so no SIP changes and no disabled security are required. Writing there
@@ -22,28 +29,23 @@ import Foundation
 /// every mutation is preceded by a backup and paired with `revert`.
 enum DisplayOverrideInstaller {
 
-    // MARK: - Availability
+    // MARK: - Mechanisms
+
+    enum Mechanism {
+        case edidBlob
+        case scaledResolutions
+    }
 
     /// Whether writing a plist here actually reaches the display pipeline.
     ///
-    /// Measured on M4 Max / macOS 27.0.1 / BenQ PD2705U: the plist lands exactly
+    /// `edidBlob` was measured inert on Apple silicon: the plist lands exactly
     /// where Apple's own overrides live and validates, and the system still
-    /// enumerates the panel's own EDID afterwards. The three triggers that are
-    /// documented to reload the display database were all tried — cable re-plug,
-    /// display sleep/wake, full system sleep/wake — and every one of them left the
-    /// mode list at 290 entries with the live `EDID` property untouched (the
-    /// descriptor slot we patched read back as `0.00 MHz`).
+    /// enumerates the panel's own EDID afterwards. Cable re-plug, display
+    /// sleep/wake and full system sleep/wake all left the mode list unchanged.
     ///
-    /// On Apple silicon the only mechanism that does work is a private live
-    /// injection, which has no exported entry point on this system:
-    /// `CoreDisplay_Display_SetEDID`, `SLSDisplaySetEDID`, `CGSDisplaySetEDID`,
-    /// `DisplayServicesSetEDID` do not exist, and `IOAVService*` exists as symbols
-    /// but has no instance to attach to.
-    ///
-    /// So the honest thing is to say "this cannot work here" before asking for an
-    /// administrator password. `RDM_ALLOW_EDID_OVERRIDE=1` forces the old
-    /// behaviour, which is how a future macOS release can be re-tested without
-    /// rebuilding.
+    /// `scaledResolutions` is the opposite: after adding one 8-byte entry and
+    /// re-attaching the display, the mode list grows and the new point size can
+    /// be applied. That is why the two are answered separately.
     enum Support {
         case available
         case inertOnAppleSilicon
@@ -67,11 +69,16 @@ enum DisplayOverrideInstaller {
         return value == 1
     }
 
-    static var support: Support {
-        if ProcessInfo.processInfo.environment["RDM_ALLOW_EDID_OVERRIDE"] == "1" {
+    static func support(for mechanism: Mechanism) -> Support {
+        switch mechanism {
+        case .edidBlob:
+            if ProcessInfo.processInfo.environment["RDM_ALLOW_EDID_OVERRIDE"] == "1" {
+                return .available
+            }
+            return isAppleSiliconHost ? .inertOnAppleSilicon : .available
+        case .scaledResolutions:
             return .available
         }
-        return isAppleSiliconHost ? .inertOnAppleSilicon : .available
     }
 
     // MARK: - Paths
@@ -88,6 +95,13 @@ enum DisplayOverrideInstaller {
 
         var path: String {
             directory + String(format: "/DisplayProductID-%x", product)
+        }
+
+        /// Apple's own entry for this panel, used as the baseline when adding a
+        /// scaled resolution and as the "nothing custom left" comparison.
+        var systemPath: String {
+            String(format: "/System/Library/Displays/Contents/Resources/Overrides/DisplayVendorID-%x/DisplayProductID-%x",
+                   vendor, product)
         }
 
         /// User-domain copy kept in Application Support so `revert` never needs
@@ -108,45 +122,127 @@ enum DisplayOverrideInstaller {
         Target(vendor: edid.vendor, product: edid.product)
     }
 
-    // MARK: - State
+    // MARK: - Reading
 
-    /// The override currently installed for this panel, if any.
-    static func installedEDID(for edid: EDID) -> EDID? {
-        let target = target(for: edid)
-        guard let data = FileManager.default.contents(atPath: target.path),
+    /// The override currently on disk for this panel, if any.
+    static func installedPayload(for edid: EDID) -> [String: Any]? {
+        readPayload(at: target(for: edid).path)
+    }
+
+    /// Apple's own entry for this panel, when it ships one.
+    static func systemPayload(for edid: EDID) -> [String: Any]? {
+        readPayload(at: target(for: edid).systemPath)
+    }
+
+    private static func readPayload(at path: String) -> [String: Any]? {
+        guard let data = FileManager.default.contents(atPath: path),
               let plist = try? PropertyListSerialization.propertyList(from: data, format: nil),
-              let dictionary = plist as? [String: Any],
-              let blob = dictionary["IODisplayEDID"] as? Data
+              let dictionary = plist as? [String: Any]
         else { return nil }
-        return EDID(data: blob)
+        return dictionary
     }
 
-    static func hasOverride(for edid: EDID) -> Bool {
-        FileManager.default.fileExists(atPath: target(for: edid).path)
+    private static func backupPayload(target: Target) -> [String: Any]? {
+        readPayload(at: target.backupPath)
     }
 
-    static func hasBackup(for edid: EDID) -> Bool {
-        FileManager.default.fileExists(atPath: target(for: edid).backupPath)
+    static func hasEDIDOverride(for edid: EDID) -> Bool {
+        installedPayload(for: edid)?["IODisplayEDID"] != nil
+    }
+
+    /// Scaled resolutions this app added on top of Apple's own entry.
+    static func scaledResolutions(for edid: EDID) -> [ScaledResolution] {
+        scaledResolutions(vendor: edid.vendor, product: edid.product)
+    }
+
+    /// Same lookup without reading the EDID: the menu only needs the panel's
+    /// vendor/product numbers, which CoreGraphics already exposes.
+    static func scaledResolutions(vendor: UInt32, product: UInt32) -> [ScaledResolution] {
+        let target = Target(vendor: vendor, product: product)
+        let installed = ScaleResolutionStore.rawEntries(in: readPayload(at: target.path))
+        let baseline = ScaleResolutionStore.rawEntries(in: readPayload(at: target.systemPath))
+        return ScaleResolutionStore.customEntries(installed: installed, baseline: baseline)
+            .compactMap(ScaledResolution.decode)
+    }
+
+    static func hasScaledResolutions(for edid: EDID) -> Bool {
+        !scaledResolutions(for: edid).isEmpty
+    }
+
+    static func hasAnyOverride(for edid: EDID) -> Bool {
+        hasEDIDOverride(for: edid) || hasScaledResolutions(for: edid)
     }
 
     // MARK: - Mutations
 
     /// Writes `edid` as the system-wide override for its own panel.
     ///
-    /// - Throws: `InstallError` with the shell's message when authorisation is
-    ///   cancelled or the copy fails.
+    /// Merges into the existing payload: an EDID patch must not wipe a
+    /// `scale-resolutions` array, and vice versa.
     static func install(_ edid: EDID) throws {
+        var payload = installedPayload(for: edid) ?? systemPayload(for: edid) ?? [:]
+        payload["IODisplayEDID"] = edid.data
+        try write(payload, for: edid)
+    }
+
+    static func installScaledResolutions(_ resolutions: [ScaledResolution], for edid: EDID) throws {
+        var payload = installedPayload(for: edid) ?? systemPayload(for: edid) ?? [:]
+        for resolution in resolutions {
+            payload = ScaleResolutionStore.merged(payload: payload, adding: resolution)
+        }
+        try write(payload, for: edid)
+    }
+
+    static func removeScaledResolutions(_ resolutions: [ScaledResolution], for edid: EDID) throws {
+        guard var payload = installedPayload(for: edid) else { return }
+        for resolution in resolutions {
+            payload = ScaleResolutionStore.merged(payload: payload, removing: resolution)
+        }
+        if isRedundant(payload, for: edid) {
+            try delete(for: edid)
+        } else {
+            try write(payload, for: edid)
+        }
+    }
+
+    /// Removes the EDID patch only. Scaled-resolution entries survive, because
+    /// they are a different mechanism with a different owner — reverting one
+    /// must never undo the other.
+    static func revert(for edid: EDID) throws {
+        let target = target(for: edid)
+        guard var payload = installedPayload(for: edid) else {
+            try? FileManager.default.removeItem(atPath: target.backupPath)
+            return
+        }
+
+        let backup = backupPayload(target: target)
+        if let original = backup?["IODisplayEDID"] as? Data {
+            payload["IODisplayEDID"] = original
+        } else {
+            payload.removeValue(forKey: "IODisplayEDID")
+        }
+
+        if isRedundant(payload, for: edid) {
+            try delete(for: edid)
+        } else {
+            try write(payload, for: edid)
+        }
+        try? FileManager.default.removeItem(atPath: target.backupPath)
+    }
+
+    // MARK: - Writing
+
+    private static func write(_ payload: [String: Any], for edid: EDID) throws {
         let target = target(for: edid)
         try backupExistingOverride(target: target)
 
+        var merged = payload
+        merged["DisplayVendorID"] = Int(edid.vendor)
+        merged["DisplayProductID"] = Int(edid.product)
+
         let temporary = FileManager.default.temporaryDirectory
             .appendingPathComponent("rdm-override-\(UUID().uuidString).plist")
-        let payload: [String: Any] = [
-            "DisplayVendorID": Int(edid.vendor),
-            "DisplayProductID": Int(edid.product),
-            "IODisplayEDID": edid.data,
-        ]
-        let data = try PropertyListSerialization.data(fromPropertyList: payload,
+        let data = try PropertyListSerialization.data(fromPropertyList: merged,
                                                       format: .binary,
                                                       options: 0)
         try data.write(to: temporary)
@@ -160,23 +256,28 @@ enum DisplayOverrideInstaller {
         try runAsAdministrator(command)
     }
 
-    /// Restores the file that was there before `install`, or removes the override
-    /// entirely when there was none.
-    static func revert(for edid: EDID) throws {
+    private static func delete(for edid: EDID) throws {
         let target = target(for: edid)
-        var commands: [String] = []
+        let command = "/bin/rm -f \(shellQuote(target.path))"
+            + " && /bin/rmdir \(shellQuote(target.directory)) 2>/dev/null || true"
+        try runAsAdministrator(command)
+    }
 
-        if FileManager.default.fileExists(atPath: target.backupPath) {
-            commands.append("/bin/mkdir -p \(shellQuote(target.directory))")
-            commands.append("/usr/bin/install -m 644 -o root -g wheel "
-                            + "\(shellQuote(target.backupPath)) \(shellQuote(target.path))")
-        } else {
-            commands.append("/bin/rm -f \(shellQuote(target.path))")
-            commands.append("/bin/rmdir \(shellQuote(target.directory)) 2>/dev/null || true")
+    /// True when the payload carries nothing beyond Apple's own entry, so the
+    /// `/Library` file can be removed without changing the mode table.
+    private static func isRedundant(_ payload: [String: Any], for edid: EDID) -> Bool {
+        let current = normalized(payload)
+        if let system = systemPayload(for: edid) {
+            return NSDictionary(dictionary: current).isEqual(to: normalized(system))
         }
+        return current.isEmpty
+    }
 
-        try runAsAdministrator(commands.joined(separator: " && "))
-        try? FileManager.default.removeItem(atPath: target.backupPath)
+    private static func normalized(_ payload: [String: Any]) -> [String: Any] {
+        var copy = payload
+        copy.removeValue(forKey: "DisplayVendorID")
+        copy.removeValue(forKey: "DisplayProductID")
+        return copy
     }
 
     // MARK: - Backup
@@ -215,7 +316,7 @@ enum DisplayOverrideInstaller {
     /// The command is passed as an *argument* to `do shell script`, not spliced
     /// into AppleScript source, so there is no second layer of quoting to get
     /// wrong.
-    private static func runAsAdministrator(_ command: String) throws {
+    static func runAsAdministrator(_ command: String) throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
         process.arguments = [
