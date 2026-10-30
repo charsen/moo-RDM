@@ -28,6 +28,9 @@ public enum CommandLineRunner {
         var refreshAudit = false
         /// "3840x2160@75" — a rate that has to be synthesised, not selected.
         var customTiming: String?
+        /// "2304x1296" — add/remove a scaled resolution override.
+        var customResolution: String?
+        var removeResolution: String?
         var writeOverride = false
         var keepOverride = false
         var revertOverride = false
@@ -103,6 +106,9 @@ public enum CommandLineRunner {
         if options.customTiming != nil || options.revertOverride {
             return customTiming(options)
         }
+        if options.customResolution != nil || options.removeResolution != nil {
+            return customResolution(options)
+        }
         if options.wantsChange {
             return changeMode(options)
         }
@@ -173,6 +179,10 @@ public enum CommandLineRunner {
                 options.refreshAudit = true
             case "--custom-timing":
                 options.customTiming = try value(argument)
+            case "--custom-resolution", "--scaled-resolution":
+                options.customResolution = try value(argument)
+            case "--remove-resolution":
+                options.removeResolution = try value(argument)
             case "--write":
                 options.writeOverride = true
             case "--keep":
@@ -908,6 +918,133 @@ public enum CommandLineRunner {
             writeError("\(error)")
             return 1
         }
+        return 0
+    }
+
+    // MARK: - Scaled resolution override
+
+    private struct ResolutionSpec {
+        let width: Int
+        let height: Int
+
+        init?(_ raw: String) {
+            let normalized = raw
+                .replacingOccurrences(of: "×", with: "x")
+                .replacingOccurrences(of: "*", with: "x")
+                .replacingOccurrences(of: "X", with: "x")
+            let parts = normalized.split(separator: "x", omittingEmptySubsequences: false)
+            guard parts.count == 2,
+                  let width = Int(parts[0]), let height = Int(parts[1]),
+                  width > 0, height > 0 else { return nil }
+            self.width = width
+            self.height = height
+        }
+    }
+
+    /// Adds or removes a `scale-resolutions` entry.
+    ///
+    /// Unlike a custom timing this cannot black the screen: the mode is not
+    /// applied, it only becomes available after the display is re-attached. That
+    /// is why there is no watchdog rollback here.
+    private static func customResolution(_ options: Options) -> Int32 {
+        if options.json {
+            writeError(L10n.t("error.jsonUnsupportedResolution"))
+            return 2
+        }
+
+        // Parse before resolving a display: a malformed spec is a usage error and
+        // should not depend on whether a panel happens to be attached.
+        let removal: ResolutionSpec?
+        let addition: ResolutionSpec?
+        if let raw = options.removeResolution {
+            guard let spec = ResolutionSpec(raw) else {
+                writeError(L10n.t("error.resolutionSyntax"))
+                return 2
+            }
+            removal = spec
+            addition = nil
+        } else if let raw = options.customResolution {
+            guard let spec = ResolutionSpec(raw) else {
+                writeError(L10n.t("error.resolutionSyntax"))
+                return 2
+            }
+            removal = nil
+            addition = spec
+        } else {
+            return 0
+        }
+
+        let display: DisplayInfo
+        do {
+            display = try targetDisplay(options)
+        } catch let error as ParseError {
+            writeError(error.message)
+            return 1
+        } catch {
+            writeError("\(error)")
+            return 1
+        }
+
+        guard let edid = DisplayEDIDReader.read(for: display.id) else {
+            writeError(L10n.t("error.timingNoEDID"))
+            return 1
+        }
+
+        let path = DisplayOverrideInstaller.target(for: edid).path
+
+        if let spec = removal {
+            let installed = DisplayOverrideInstaller.scaledResolutions(for: edid)
+            guard let match = installed.first(where: {
+                $0.pointWidth == spec.width && $0.pointHeight == spec.height
+            }) else {
+                writeError(L10n.t("error.resolutionNotInstalled",
+                                  "\(spec.width) × \(spec.height)"))
+                return 1
+            }
+
+            print("\(display.name): \(match.label)")
+            print("    override       \(path)")
+            guard options.writeOverride else {
+                print(L10n.t("cli.resolutionRemoveDryRun"))
+                return 0
+            }
+            do {
+                try DisplayOverrideInstaller.removeScaledResolutions([match], for: edid)
+            } catch {
+                writeError("\(error)")
+                return 1
+            }
+            print(L10n.t("cli.resolutionRemoved"))
+            return 0
+        }
+
+        guard let spec = addition else { return 0 }
+        let resolution: ScaledResolution
+        switch ScaleResolutionStore.validate(pointWidth: spec.width,
+                                             pointHeight: spec.height,
+                                             on: display, edid: edid) {
+        case .success(let value):
+            resolution = value
+        case .failure(let failure):
+            writeError(failure.description)
+            return 1
+        }
+
+        print("\(display.name): \(resolution.pointWidth) × \(resolution.pointHeight) ⚡️"
+              + " (backing \(resolution.backingWidth) × \(resolution.backingHeight))")
+        print("    override       \(path)")
+
+        guard options.writeOverride else {
+            print(L10n.t("cli.resolutionDryRun"))
+            return 0
+        }
+        do {
+            try DisplayOverrideInstaller.installScaledResolutions([resolution], for: edid)
+        } catch {
+            writeError("\(error)")
+            return 1
+        }
+        print(L10n.t("cli.resolutionInstalled"))
         return 0
     }
 
