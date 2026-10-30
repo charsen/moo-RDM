@@ -76,7 +76,7 @@ final class ModeMemoryController {
     func remember(displayID: CGDirectDisplayID) {
         let ids = DisplayManager.onlineDisplayIDs()
         guard let ordinal = ids.firstIndex(of: displayID) else { return }
-        remember(display: DisplayManager.snapshot(displayID, ordinal: ordinal).display)
+        remember(display: DisplayManager.info(displayID, ordinal: ordinal))
     }
 
     /// The mode this display would be restored to, if any.
@@ -109,31 +109,39 @@ final class ModeMemoryController {
         let remembered = Preferences.shared.rememberedModes
         guard !remembered.isEmpty else { return 0 }
 
-        var changed = 0
-        for display in DisplayManager.allDisplays() {
-            // The unit-qualified key is new; fall back once to the key earlier
-            // versions wrote so an upgrade does not silently forget everything.
+        let displays = DisplayManager.allInfos()
+        var targets: [(displayID: CGDirectDisplayID, target: RememberedMode)] = []
+        var rotated = false
+
+        // Rotate every display first: rotation changes which modes exist, so
+        // interleaving it with mode application would make each lookup race the
+        // previous rotation. A failed rotation is not fatal — the mode is still
+        // applied at the current orientation.
+        for display in displays {
             guard let target = remembered[display.identity.key]
                     ?? remembered[display.identity.legacyKey]
             else { continue }
-            if restore(display: display, target: target) { changed += 1 }
+
+            if let rotation = target.rotation, rotation > 0,
+               abs(display.rotation - rotation) >= 0.5 {
+                if case .success = DisplayRotationController.setRotation(rotation, on: display.id) {
+                    rotated = true
+                }
+            }
+            targets.append((display.id, target))
+        }
+        guard !targets.isEmpty else { return 0 }
+
+        // One re-read after all rotations, instead of one per display.
+        let refreshed = rotated ? DisplayManager.allInfos() : displays
+        let byID = Dictionary(uniqueKeysWithValues: refreshed.map { ($0.id, $0) })
+
+        var changed = 0
+        for entry in targets {
+            guard let display = byID[entry.displayID] else { continue }
+            if apply(entry.target, to: display) { changed += 1 }
         }
         return changed
-    }
-
-    private func restore(display: DisplayInfo, target: RememberedMode) -> Bool {
-        var current = display
-
-        if let rotation = target.rotation, rotation > 0, abs(current.rotation - rotation) >= 0.5 {
-            guard case .success = DisplayRotationController.setRotation(rotation, on: current.id) else {
-                return apply(target, to: current)
-            }
-            if let refreshed = DisplayManager.allDisplays().first(where: { $0.id == current.id }) {
-                current = refreshed
-            }
-        }
-
-        return apply(target, to: current)
     }
 
     private func apply(_ target: RememberedMode, to display: DisplayInfo) -> Bool {

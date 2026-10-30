@@ -92,7 +92,7 @@ final class MenuActionRouter: NSObject {
     private func display(_ id: CGDirectDisplayID) -> DisplayInfo? {
         let ids = DisplayManager.onlineDisplayIDs()
         guard let ordinal = ids.firstIndex(of: id) else { return nil }
-        return DisplayManager.snapshot(id, ordinal: ordinal).display
+        return DisplayManager.info(id, ordinal: ordinal)
     }
 
     private func report(_ error: String) {
@@ -182,8 +182,20 @@ final class MenuActionRouter: NSObject {
     // MARK: - Multiple displays
 
     private func applyMatch(_ box: MatchBox) {
+        // A mirror link is about to be (re)made for these displays. Detach any
+        // that are already mirrored first, so the mode assignment does not happen
+        // while the display is still inside a mirror set.
+        var unmirror: [CGDirectDisplayID] = []
+        if !box.mirroring.isEmpty {
+            let targets = Set(box.assignments.map(\.displayID))
+            unmirror = DisplayManager.allInfos()
+                .filter { targets.contains($0.id) && $0.isMirrored }
+                .map(\.id)
+        }
+
         switch ModeController.apply(box.assignments,
                                     mirroring: box.mirroring,
+                                    unmirroring: unmirror,
                                     permanently: Preferences.shared.permanentChanges) {
         case .success:
             for assignment in box.assignments {

@@ -63,7 +63,7 @@ enum DisplayPresetEngine {
     /// Snapshots the current topology, modes, rotation, mirror links and
     /// brightness. Returns `nil` when there is nothing to capture.
     static func capture(name: String) -> DisplayPreset? {
-        let displays = DisplayManager.allDisplays()
+        let displays = DisplayManager.allInfos()
         var states: [String: PresetDisplay] = [:]
 
         for display in displays {
@@ -109,7 +109,7 @@ enum DisplayPresetEngine {
             displays.first { $0.identity.key == key || $0.identity.legacyKey == key }
         }
 
-        let initial = DisplayManager.allDisplays()
+        let initial = DisplayManager.allInfos()
 
         var rotated = false
         for (key, state) in sorted {
@@ -123,7 +123,7 @@ enum DisplayPresetEngine {
             }
         }
 
-        let current = rotated ? DisplayManager.allDisplays() : initial
+        let current = rotated ? DisplayManager.allInfos() : initial
 
         // Resolve every preset entry once. A display that is not connected is
         // reported and skipped; it must never be replaced with a different panel.
@@ -163,14 +163,12 @@ enum DisplayPresetEngine {
             desiredMirrors[slave.id] = master.id
         }
 
-        // Only displays captured by this preset may be unmirrored. A panel that
-        // was attached after the preset was saved is left exactly as it is.
+        // Detach every mirrored display this preset owns before assigning modes:
+        // setting a mode while a display is still in a mirror set is the case that
+        // fails on some GPUs. Desired links are re-established after assignments.
         let presetIDs = Set(resolved.values.map(\.id))
-        let desiredSlaves = Set(desiredMirrors.keys)
         let unmirror = current
-            .filter {
-                $0.isMirrored && presetIDs.contains($0.id) && !desiredSlaves.contains($0.id)
-            }
+            .filter { $0.isMirrored && presetIDs.contains($0.id) }
             .map(\.id)
 
         if !assignments.isEmpty || !desiredMirrors.isEmpty || !unmirror.isEmpty {

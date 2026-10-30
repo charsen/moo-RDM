@@ -159,8 +159,12 @@ public enum DisplayManager {
     /// - Parameter includeUnusable: keep modes where
     ///   `CGDisplayModeIsUsableForDesktopGUI` is false. macOS hides these from the
     ///   GUI, but they are often perfectly displayable — this is RDM's signature feature.
+    /// - Parameter includePrivate: append rows only the private window-server table
+    ///   knows. Callers that do not need them (the menu with hidden modes off, native
+    ///   size detection) skip a per-row private call.
     public static func allModes(for displayID: CGDirectDisplayID,
-                                includeUnusable: Bool = true) -> [DisplayMode] {
+                                includeUnusable: Bool = true,
+                                includePrivate: Bool = true) -> [DisplayMode] {
         let options = [kCGDisplayShowDuplicateLowResolutionModes as String: true] as CFDictionary
         guard let raw = CGDisplayCopyAllDisplayModes(displayID, options) else { return [] }
 
@@ -182,7 +186,7 @@ public enum DisplayManager {
         // (CoreGraphics error 1001, e.g. a 60 Hz HiDPI size the link only
         // carries at 30); whoever wants those turns the switch on and accepts
         // the risk that comes with them.
-        if includeUnusable {
+        if includeUnusable && includePrivate {
             modes.append(contentsOf: hiddenModes(for: displayID, known: modes))
         }
         return modes
@@ -266,9 +270,17 @@ public enum DisplayManager {
     public static func snapshot(_ displayID: CGDirectDisplayID,
                                 ordinal: Int,
                                 includeUnusable: Bool = true) -> DisplaySnapshot {
-        let all = allModes(for: displayID, includeUnusable: true)
-        let native = nativePixelSize(in: all)
-        let visible = includeUnusable ? all : all.filter { $0.isUsable && !$0.isPrivate }
+        // Public rows are needed either way; the private table is only consulted
+        // when the caller wants hidden modes. With the menu's default (hidden
+        // modes off) this removes a per-row private call from every menu open.
+        let publicModes = allModes(for: displayID, includeUnusable: true, includePrivate: false)
+        let native = nativePixelSize(in: publicModes)
+        let visible: [DisplayMode]
+        if includeUnusable {
+            visible = publicModes + hiddenModes(for: displayID, known: publicModes)
+        } else {
+            visible = publicModes.filter(\.isUsable)
+        }
 
         let info = DisplayInfo(
             id: displayID,
@@ -291,6 +303,34 @@ public enum DisplayManager {
         onlineDisplayIDs().enumerated().map {
             snapshot($0.element, ordinal: $0.offset, includeUnusable: includeUnusable)
         }
+    }
+
+    // MARK: - Lightweight info
+
+    /// Display identity and current state without enumerating the mode table.
+    ///
+    /// Menu actions, mode memory and preset capture only need the current mode,
+    /// rotation, mirror state and identity. A full `snapshot` would enumerate
+    /// every mode (and the private table) just to answer that.
+    public static func info(_ displayID: CGDirectDisplayID, ordinal: Int) -> DisplayInfo {
+        DisplayInfo(
+            id: displayID,
+            ordinal: ordinal,
+            name: name(for: displayID, ordinal: ordinal),
+            isBuiltin: CGDisplayIsBuiltin(displayID) != 0,
+            isMain: CGDisplayIsMain(displayID) != 0,
+            isActive: CGDisplayIsActive(displayID) != 0,
+            isMirrored: CGDisplayIsInMirrorSet(displayID) != 0,
+            identity: DisplayIdentity.of(displayID, ordinal: ordinal),
+            currentMode: currentMode(for: displayID),
+            rotation: CGDisplayRotation(displayID),
+            bounds: CGDisplayBounds(displayID),
+            nativePixelSize: nil
+        )
+    }
+
+    public static func allInfos() -> [DisplayInfo] {
+        onlineDisplayIDs().enumerated().map { info($0.element, ordinal: $0.offset) }
     }
 
     // MARK: - Assembly
