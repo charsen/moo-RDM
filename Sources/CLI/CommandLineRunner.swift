@@ -377,7 +377,31 @@ public enum CommandLineRunner {
             }
         }
 
+        // The menu records what it applies, so a reconnect restores it. A CLI
+        // change used to be invisible to that memory: the next launch (or display
+        // attach) silently put the old mode back. Record it here too.
+        if exitCode == 0, options.wantsChange {
+            rememberCurrentMode(of: display)
+        }
+
         return exitCode
+    }
+
+    private static func rememberCurrentMode(of display: DisplayInfo) {
+        guard Preferences.shared.rememberPerDisplay else { return }
+        let ids = DisplayManager.onlineDisplayIDs()
+        guard let ordinal = ids.firstIndex(of: display.id) else { return }
+
+        let snapshot = DisplayManager.snapshot(display.id, ordinal: ordinal)
+        guard let mode = snapshot.display.currentMode else { return }
+        let rotation = CGDisplayRotation(display.id)
+        let remembered = RememberedMode(displayName: snapshot.display.name,
+                                        width: mode.width,
+                                        height: mode.height,
+                                        scale: mode.scale,
+                                        refreshRate: mode.refreshRate,
+                                        rotation: rotation == 0 ? nil : rotation)
+        Preferences.shared.remember(remembered, for: snapshot.display.identity.key)
     }
 
     /// Rates the display lists at the geometry that was actually applied.
