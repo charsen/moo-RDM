@@ -176,6 +176,14 @@ final class SettingsViewController: NSViewController {
         stack.addArrangedSubview(checkbox(L10n.t("settings.restoreOnWake"),
                                           on: Preferences.shared.restoreOnWake,
                                           action: #selector(toggleRestoreOnWake(_:))))
+        addFullWidth(hint(L10n.t("settings.restoreOnWake.hint")), to: stack)
+
+        let forgetAll = NSButton(title: L10n.t("settings.forgetAll"),
+                                 target: self,
+                                 action: #selector(forgetAllRemembered(_:)))
+        forgetAll.bezelStyle = .rounded
+        stack.addArrangedSubview(forgetAll)
+        addFullWidth(hint(L10n.t("settings.forgetAll.hint")), to: stack)
 
         return stack
     }
@@ -322,6 +330,17 @@ final class SettingsViewController: NSViewController {
 
     @objc private func toggleOptionalModule(_ sender: NSButton) {
         Preferences.shared.enableOptionalModule = sender.state == .on
+    }
+
+    @objc private func forgetAllRemembered(_ sender: NSButton) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = L10n.t("settings.forgetAll.confirm")
+        alert.informativeText = L10n.t("settings.forgetAll.confirm.hint")
+        alert.addButton(withTitle: L10n.t("common.ok"))
+        alert.addButton(withTitle: L10n.t("common.cancel"))
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        Preferences.shared.forgetAllRememberedModes()
     }
 
     @objc private func copyDiagnostics(_ sender: NSButton) {

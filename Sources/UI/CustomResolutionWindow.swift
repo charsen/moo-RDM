@@ -14,6 +14,7 @@ final class CustomResolutionWindowController: NSWindowController, NSWindowDelega
     private var edid: EDID?
 
     private let displayLabel = NSTextField(labelWithString: "")
+    private let presetPopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let widthField = NSTextField(string: "")
     private let heightField = NSTextField(string: "")
     private let backingLabel = NSTextField(labelWithString: "")
@@ -26,6 +27,16 @@ final class CustomResolutionWindowController: NSWindowController, NSWindowDelega
 
     private var customEntries: [ScaledResolution] = []
     private var isBusy = false
+
+    /// Common point sizes worth offering as one-click presets. The list is not a
+    /// claim about the panel: entries already on offer are shown disabled, so the
+    /// popup also answers "why can't I just pick this one?".
+    private static let presetSizes: [(Int, Int)] = [
+        (3840, 2160), (3200, 1800), (3072, 1728), (2880, 1620),
+        (2560, 1440), (2304, 1296), (2048, 1152), (1920, 1080),
+        (1680, 945), (1600, 900), (1440, 810), (1280, 720), (1024, 576),
+        (2560, 1600), (1920, 1200), (1680, 1050), (1440, 900), (1280, 800),
+    ]
 
     var onClose: (() -> Void)?
 
@@ -71,6 +82,11 @@ final class CustomResolutionWindowController: NSWindowController, NSWindowDelega
         displayLabel.font = .systemFont(ofSize: 12)
         displayLabel.textColor = .secondaryLabelColor
         root.addArrangedSubview(displayLabel)
+
+        presetPopup.target = self
+        presetPopup.action = #selector(applyPreset(_:))
+        presetPopup.widthAnchor.constraint(equalToConstant: 240).isActive = true
+        root.addArrangedSubview(presetPopup)
 
         let fields = NSStackView()
         fields.orientation = .horizontal
@@ -183,7 +199,35 @@ final class CustomResolutionWindowController: NSWindowController, NSWindowDelega
 
         customEntries = edid.map { DisplayOverrideInstaller.scaledResolutions(for: $0) } ?? []
         rebuildEntries()
+        rebuildPresets()
         validate()
+    }
+
+    private func rebuildPresets() {
+        presetPopup.removeAllItems()
+        presetPopup.addItem(withTitle: L10n.t("window.custom.preset"))
+        presetPopup.lastItem?.isEnabled = false
+        presetPopup.menu?.addItem(.separator())
+
+        guard edid != nil else { return }
+        let installed = Set(customEntries.map { "\($0.pointWidth)x\($0.pointHeight)" })
+        let modes = DisplayManager.allModes(for: display.id, includeUnusable: true)
+
+        for size in Self.presetSizes {
+            let key = "\(size.0)x\(size.1)"
+            let offered = modes.contains {
+                $0.width == size.0 && $0.height == size.1 && $0.isHiDPI
+            }
+            let present = installed.contains(key)
+            var title = "\(size.0) × \(size.1)"
+            if offered || present {
+                title += " · " + L10n.t("window.custom.preset.available")
+            }
+            presetPopup.addItem(withTitle: title)
+            presetPopup.lastItem?.representedObject = key
+            presetPopup.lastItem?.isEnabled = !(offered || present)
+        }
+        presetPopup.selectItem(at: 0)
     }
 
     private func rebuildEntries() {
@@ -268,6 +312,15 @@ final class CustomResolutionWindowController: NSWindowController, NSWindowDelega
     // MARK: - Actions
 
     func controlTextDidChange(_ notification: Notification) {
+        validate()
+    }
+
+    @objc private func applyPreset(_ sender: NSPopUpButton) {
+        guard let raw = sender.selectedItem?.representedObject as? String else { return }
+        let parts = raw.split(separator: "x").compactMap { Int($0) }
+        guard parts.count == 2 else { return }
+        widthField.stringValue = String(parts[0])
+        heightField.stringValue = String(parts[1])
         validate()
     }
 

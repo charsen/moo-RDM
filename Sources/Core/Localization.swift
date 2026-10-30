@@ -59,6 +59,7 @@ public enum L10n {
     private static let english: [String: String] = [
         "app.name": "RDM-ARM",
         "common.ok": "OK",
+        "common.cancel": "Cancel",
 
         "menu.display": "Display %d",
         "menu.mainDisplay": "Main Display",
@@ -92,6 +93,7 @@ public enum L10n {
         "menu.about": "About RDM-ARM",
         "menu.quit": "Quit RDM-ARM",
         "menu.resetToDefault": "Reset to system default",
+        "menu.forgetRemembered": "Forget remembered mode",
         "menu.unsupported": "not for desktop GUI",
 
         "menu.capabilities": "EDID and refresh limits",
@@ -107,6 +109,8 @@ public enum L10n {
 
         "window.custom.title": "Add scaled resolution — %@",
         "window.custom.display": "%@ · native %@",
+        "window.custom.preset": "Common sizes…",
+        "window.custom.preset.available": "available",
         "window.custom.width": "Width",
         "window.custom.height": "Height",
         "window.custom.backing": "Backing store %d × %d (2×)",
@@ -144,6 +148,11 @@ public enum L10n {
         "settings.rememberPerDisplay": "Remember mode per display",
         "settings.rememberPerDisplay.hint": "Restore your chosen resolution when a display is reconnected",
         "settings.restoreOnWake": "Restore modes after wake",
+        "settings.restoreOnWake.hint": "Re-apply the remembered mode when the Mac wakes up",
+        "settings.forgetAll": "Forget all remembered modes",
+        "settings.forgetAll.hint": "Displays keep their current mode; only the automatic restore is removed",
+        "settings.forgetAll.confirm": "Forget every remembered resolution?",
+        "settings.forgetAll.confirm.hint": "This cannot be undone. Displays are not changed right now.",
         "settings.section.private": "Private interfaces",
         "settings.optionalModule": "Enable rotation, brightness and hidden HiDPI",
         "settings.optionalModule.hint": "These need private system interfaces. Rotation and brightness use them to write; hidden HiDPI lists the supersampled resolutions macOS generates but never exposes. Turn this off to keep the app strictly on public APIs.",
@@ -179,6 +188,7 @@ public enum L10n {
         "error.timingNoEDID": "Could not read this display's EDID",
         "error.timingNoNative": "This display reports no native timing to build on",
         "error.timingGeometry": "The native timing cannot be scaled to %@",
+        "error.timingClockCeiling": "This timing needs about %d MHz, but an EDID descriptor's pixel clock tops out at 655 MHz. Add a scaled resolution from the menu instead — it adds a backing size without a new timing",
         "error.timingBudget": "%d Hz is beyond what this link allows (about %d Hz)",
         "error.timingNoSlot": "The EDID has no free descriptor slot for another timing",
         "error.timingSyntax": "Expected a timing like 3840x2160@75",
@@ -200,6 +210,7 @@ public enum L10n {
         "cli.timingWatchdog": "    rolling back in %d s unless --keep is given…",
         "cli.timingKept": "    kept — remove later with --revert",
         "cli.timingReverted": "%@: display override reverted",
+        "cli.rateSubstituted": "    note: %d Hz is not offered at this size — using %d Hz (available: %@)",
 
         "cli.usage": """
         RDM-ARM — set macOS displays to any resolution they support
@@ -271,6 +282,7 @@ public enum L10n {
     private static let chinese: [String: String] = [
         "app.name": "RDM-ARM",
         "common.ok": "确定",
+        "common.cancel": "取消",
 
         "menu.display": "显示器 %d",
         "menu.mainDisplay": "主显示器",
@@ -304,6 +316,7 @@ public enum L10n {
         "menu.about": "关于 RDM-ARM",
         "menu.quit": "退出 RDM-ARM",
         "menu.resetToDefault": "恢复系统默认",
+        "menu.forgetRemembered": "忘掉记住的模式",
         "menu.unsupported": "不适于桌面 GUI",
 
         "menu.capabilities": "EDID 与刷新上限",
@@ -319,6 +332,8 @@ public enum L10n {
 
         "window.custom.title": "添加缩放分辨率 — %@",
         "window.custom.display": "%@ · 原生 %@",
+        "window.custom.preset": "常用尺寸…",
+        "window.custom.preset.available": "已可用",
         "window.custom.width": "宽",
         "window.custom.height": "高",
         "window.custom.backing": "渲染尺寸 %d × %d（2×）",
@@ -356,6 +371,11 @@ public enum L10n {
         "settings.rememberPerDisplay": "按显示器记忆模式",
         "settings.rememberPerDisplay.hint": "显示器重新接入时恢复你选择的分辨率",
         "settings.restoreOnWake": "唤醒后恢复模式",
+        "settings.restoreOnWake.hint": "Mac 唤醒后重新应用记住的模式",
+        "settings.forgetAll": "清除全部已记住的模式",
+        "settings.forgetAll.hint": "显示器保持当前模式，只是不再自动恢复",
+        "settings.forgetAll.confirm": "清除所有已记住的分辨率？",
+        "settings.forgetAll.confirm.hint": "此操作不可撤销；当前显示器不会发生变化。",
         "settings.section.private": "私有接口",
         "settings.optionalModule": "启用旋转、亮度与隐藏 HiDPI",
         "settings.optionalModule.hint": "这些功能依赖系统私有接口：旋转与亮度用它写入，隐藏 HiDPI 则用来列出 macOS 生成但未公开的超采样分辨率。关闭后应用将严格只使用公开 API。",
@@ -391,6 +411,7 @@ public enum L10n {
         "error.timingNoEDID": "读不到此显示器的 EDID",
         "error.timingNoNative": "此显示器没有可用于推算的原生时序",
         "error.timingGeometry": "原生时序无法缩放到 %@",
+        "error.timingClockCeiling": "这个时序需要约 %d MHz，而 EDID 描述符的像素时钟上限是 655 MHz。请改用菜单里的「添加缩放分辨率…」——它只增加渲染尺寸，不新增时序",
         "error.timingBudget": "%d Hz 超出链路能力（约 %d Hz）",
         "error.timingNoSlot": "EDID 里没有空闲的时序描述符槽位",
         "error.timingSyntax": "格式应为 3840x2160@75",
@@ -412,6 +433,7 @@ public enum L10n {
         "cli.timingWatchdog": "    %d 秒后自动回滚，除非加上 --keep…",
         "cli.timingKept": "    已保留 —— 之后可用 --revert 移除",
         "cli.timingReverted": "%@：显示器 override 已回滚",
+        "cli.rateSubstituted": "    注意：该尺寸不提供 %d Hz，已使用 %d Hz（可用：%@）",
 
         "cli.usage": """
         RDM-ARM — 将 macOS 显示器设为它支持的任何分辨率

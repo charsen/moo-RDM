@@ -98,6 +98,13 @@ enum StatusMenuBuilder {
         reset.representedObject = box
         submenu.addItem(reset)
 
+        if router.memory.rememberedMode(for: display) != nil {
+            let forget = action(L10n.t("menu.forgetRemembered"),
+                                #selector(MenuActionRouter.forgetRememberedMode(_:)), router)
+            forget.representedObject = DisplayBox(displayID: display.id)
+            submenu.addItem(forget)
+        }
+
         if let rotationItem = rotationItem(for: display, router: router) {
             submenu.addItem(rotationItem)
         }

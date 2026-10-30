@@ -141,6 +141,13 @@ final class MenuActionRouter: NSObject {
         onMenuNeedsRebuild?()
     }
 
+    @objc func forgetRememberedMode(_ sender: NSMenuItem) {
+        guard let box = sender.representedObject as? DisplayBox,
+              let display = display(box.displayID) else { return }
+        memory.forget(display: display)
+        onMenuNeedsRebuild?()
+    }
+
     // MARK: - Rotation
 
     @objc func selectRotation(_ sender: NSMenuItem) {

@@ -139,6 +139,17 @@ public final class Preferences {
         rememberedModes = current
     }
 
+    /// Drops the remembered mode for one identity key.
+    public func forgetRememberedMode(for identityKey: String) {
+        var current = rememberedModes
+        current.removeValue(forKey: identityKey)
+        rememberedModes = current
+    }
+
+    public func forgetAllRememberedModes() {
+        rememberedModes = [:]
+    }
+
     // MARK: - Codable helpers
 
     private func decode<T: Decodable>(_ type: T.Type, key: String) -> T? {
