@@ -71,6 +71,15 @@ public enum DisplayRotationController {
 
         let status = setter(displayID, UInt32(angle))
         guard status == 0 else { return .failure(.failed(status)) }
+
+        // `SLSSetDisplayRotation` writes into the pending display configuration.
+        // Once this process has changed a display configuration (for example after
+        // `ModeController.apply`), the rotation is ignored until a configuration is
+        // committed; the setter still returns success. An empty commit flushes it.
+        var config: CGDisplayConfigRef?
+        if CGBeginDisplayConfiguration(&config) == .success, let config {
+            _ = CGCompleteDisplayConfiguration(config, .forSession)
+        }
         return .success(())
     }
 

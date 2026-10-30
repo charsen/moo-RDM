@@ -505,6 +505,8 @@ override 能不能用，按**机制**判定，不是按目录判定：`IODisplay
 
 **关于旋转**：`SLSSetDisplayRotation` 是私有符号，但它是**运行时动态解析**的，签名经实测确认为 `SLSSetDisplayRotation(CGDirectDisplayID, uint32_t)`（两参数形式返回成功，三参数形式返回失败）。如果将来这个符号消失，旋转菜单会**自动隐藏**，其余功能不受影响——不会崩溃。
 
+这个写入会落在**待提交的显示配置**里：同一进程改过分辨率后，直接再旋转会返回成功但不生效。`DisplayRotationController` 在 setter 成功后提交一次空配置（`kCGConfigureForSession`）把它落盘，已验证设置、还原和跨进程持久。
+
 亮度同理：`DisplayServicesCanChangeBrightness` 在外接屏上返回 0，此时亮度菜单直接不出现，而不是显示一个点不动的死控件。
 
 ---

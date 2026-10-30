@@ -49,3 +49,15 @@
   等符号均不存在。预设因此记录排列位置但不记录主屏。
 - 虚拟屏（`CGVirtualDisplay` + 硬件镜像）可以在 Apple 芯片上补尺寸，但需要虚拟屏生命周期、
   镜像拓扑与清理逻辑，暂不纳入；已在 TODOS 记录。
+
+## 2026-10-30 — 旋转在改过分辨率后会静默失效
+
+- 真机验收发现：同一进程里先改分辨率，再调用 `SLSSetDisplayRotation`，函数返回
+  `success`，但 `CGDisplayRotation` 一直停在 0；新进程里旋转正常，显示 ID 也没变。
+- 原因：SLS 旋转写入落在待提交的显示配置里。`ModeController.apply` 已经提交过配置，
+  之后的旋转要等下一次 `CGBeginDisplayConfiguration` / `CGCompleteDisplayConfiguration`
+  才会生效；空事务提交即可，`.forSession` 也能跨进程持久。
+- `DisplayRotationController.setRotation` 现在在 setter 成功后提交一次空配置；
+  已验证“改分辨率 → 旋转 → 还原”以及跨进程持久。
+- 同时修正 `build.sh`：`CFBundleVersion` 过去被写成版本号，Finder 里看不到真实
+  build 号；现在由 `BUILD` 单独提供，并校验 `AppInfo.build` 与模板一致。
