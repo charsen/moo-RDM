@@ -9,7 +9,7 @@ RDM-ARM 是 [avibrazil/RDM](https://github.com/avibrazil/RDM) 的原生 Apple �
 - 原生 **arm64**，不需要 Rosetta
 - **不需要 Xcode**，只要装了 Command Line Tools 就能构建
 - **不需要关闭 SIP**，不需要任何特殊权限
-- 显示引擎**以公开 API 为底**：默认功能全部走公开 API；只有旋转、亮度和「隐藏 HiDPI 模式」会碰私有接口，且都隔离在 `Sources/Optional/`，设置里可一键关闭
+- 显示引擎**以公开 API 为底**：默认功能全部走公开 API；只有旋转、亮度、「隐藏 HiDPI 模式」和链路预算读取会碰私有接口，且都隔离在 `Sources/Optional/`，设置里可一键关闭；override 写入走公开文件路径，只需要一次管理员授权
 
 ---
 
@@ -82,10 +82,12 @@ CGDisplayCopyAllDisplayModes(display, [
 
 | 功能 | 说明 |
 |---|---|
-| **每屏模式记忆** | 记住每块屏幕用的模式，重插后自动恢复 |
+| **每屏模式记忆** | 记住每块屏幕用的模式，重插后自动恢复（现在连旋转一起恢复，启动时也会兑现） |
 | **热插拔监听** | `CGDisplayRegisterReconfigurationCallback`，显示器插拔时菜单自动更新 |
 | **旋转** | 0° / 90° / 180° / 270°，能力探测驱动 |
 | **亮度** | 仅在支持的显示器上出现 |
+| **自定义缩放分辨率** | 菜单里给面板补 macOS 没列出的尺寸，写入 `/Library` override，重插后生效 |
+| **所有显示器** | 同分辨率、与主屏一致、镜像/停止镜像，一次事务提交 |
 
 ### 隐藏 HiDPI 模式
 
@@ -111,7 +113,7 @@ ARZOPA 多出来的 9 个是 `1920 × 1200`、`2048 × 1280`、`2560 × 1600`、
 | 路线 | 做法 | 在 Apple 芯片上 |
 |---|---|---|
 | 按属性合成模式 | 未声明但导出的 `CGDisplayModeCreate` + 公开的 `Width` / `Height` / `RefreshRate` 键 | **已废**：实测连"原样重建当前模式"都返回 `NULL` |
-| 改写 EDID | 给面板的 EDID 塞一个 18 字节 detailed timing，写进系统 override 目录 | **写入可用、读取不生效**：真机实测 macOS 27 在 Apple 芯片上不读这个目录 |
+| 改写 EDID | 给面板的 EDID 塞一个 18 字节 detailed timing，写进系统 override 目录 | **`IODisplayEDID` 写入可用、读取不生效**：真机实测 macOS 27 在 Apple 芯片上仍枚举面板原厂 EDID。同一目录下的 `scale-resolutions` 会被读取，见下面的「自定义缩放分辨率」 |
 | 私有实时注入 | 不落文件，直接把 EDID 推进显示管线 | BetterDisplay 在 Apple 芯片上用的就是这条；本机没有可用入口（详见下文） |
 
 RDM-ARM 走第二条，但先把"能不能"算清楚再动手：
@@ -155,7 +157,7 @@ Display 0: BenQ PD2705U
 $ rdm-arm --refresh-audit -r 74
     verdict        within the link budget at 1920 × 1080, but the panel never declared it
                    rdm-arm --custom-timing 1920x1080@74 -d 0
-                   (computes only — Apple silicon ignores the override)
+                   (computes only — Apple silicon ignores an EDID override)
 
 $ rdm-arm --refresh-audit -r 120
     verdict        no geometry reaches 120 Hz — the link tops out below it
@@ -190,7 +192,7 @@ $ rdm-arm --refresh-audit -r 120
 
 字段口径：`verdict` ∈ `offered` / `hidden` / `synthesizable` / `unreachable` / `unknown`；`recommendation.kind` ∈ `available-now` / `mode-switch` / `custom-timing`（后两者带 `command`）；`computesOnly: true` 表示这条命令只算不写（Apple 芯片），脚本可以据此跳过。`geometries` 不截断——文本只印 8 行是终端可读性限制，不是数据限制。不适用于当前情形的键直接省略，不出现 `null`。
 
-`--capabilities` 有同样的一份：`display` / `edid` / `nativeTiming` / `nativeCeiling` / `link` / `hiddenRates` / `override`（`installed` + `writable`，后者在 Apple 芯片上是 `false`）。`--edid` 则**没有** JSON 形式——EDID 本身是二进制，硬套 JSON 只是把 256 个字节写得更难用；带 `--json` 会直接报错并指向 `--emit-edid`，而不是假装接受然后照常打印文本表。
+`--capabilities` 有同样的一份：`display` / `edid` / `nativeTiming` / `nativeCeiling` / `link` / `hiddenRates` / `override`（`installed`、`writable`，以及 `scaledResolutions` 字符串数组；`writable` 在 Apple 芯片上只对 `IODisplayEDID` 为 `false`）。`--edid` 则**没有** JSON 形式——EDID 本身是二进制，硬套 JSON 只是把 256 个字节写得更难用；带 `--json` 会直接报错并指向 `--emit-edid`，而不是假装接受然后照常打印文本表。
 
 `unknown` 和 `unreachable` 是两件事，代码里分开：前者是**没量到**（面板不公布链路预算，一行都判不了），后者是**量到了，确实不够**。把前者说成「链路只到这儿」等于替面板编了一个它没给的数字。
 
@@ -227,7 +229,7 @@ rdm-arm --revert                                      # 随时撤掉
 
 写入目标是 `/Library/Displays/Contents/Resources/Overrides/DisplayVendorID-9d1/DisplayProductID-8039`，内容就是系统自己那种三键 plist（`DisplayVendorID` / `DisplayProductID` / `IODisplayEDID`）。改 `/Library` 而不是 `/System`，所以**不需要关 SIP**，只要一次管理员授权。
 
-**但在 Apple 芯片上这条路线不成立。**这是真机测出来的，不是推测：
+**但在 Apple 芯片上这条 EDID 时序路线不成立。**这是真机测出来的，不是推测（注意范围：被忽略的是 `IODisplayEDID`；同一目录下的 `scale-resolutions` 仍然有效，见下一节）：
 
 - override 写得进去，位置、权限、三键 plist、256 字节 EDID、块校验和全部正确；
 - 系统读不到它——`ioreg` 里的实时 `EDID` 仍是面板原厂值，被改写的那一槽读回来是 `0.00 MHz`（写入值是 166.65 MHz）；
@@ -240,6 +242,55 @@ Apple 芯片上真正可行的是私有实时注入（BetterDisplay 走的那条
 时序怎么来的：**沿用面板已经在用的 blanking，只改像素时钟**。原描述符里的前后肩、同步宽度、图像尺寸、标志位一个字节都不动——面板既然锁得上原生时序，这些数字就已经被证明可用。自己重算一套 CVT 等于同时改两个变量，失败时说不清是谁的问题。
 
 如果目标分辨率根本没有描述符（4K 面板只用一字节 CEA 码描述 1080p），才退回按原生时序的 blanking 比例缩放，并在输出里标注 `no descriptor at this geometry`——那是近似，不是原厂值。
+
+### 自定义缩放分辨率
+
+面板没有、但 macOS 又能渲染的尺寸，可以从菜单里直接加：
+
+> 菜单栏 → 某块屏 → **分辨率 → 添加缩放分辨率…**
+
+填「宽 / 高（点）」，窗口会实时显示对应的渲染尺寸（2× backing）。写入的是
+`/Library/Displays/Contents/Resources/Overrides/DisplayVendorID-<厂商>/DisplayProductID-<型号>`
+里的 `scale-resolutions` 数组，一条 8 字节 big-endian `(渲染宽, 渲染高)`：
+
+```
+2304 × 1296  →  00 00 12 00 00 00 0A 20   (4608 × 2592)
+```
+
+几件必须知道的事：
+
+- **需要一次管理员密码。** 文件写在 `/Library`，不关 SIP。写入前会把原文件备份到
+  `~/Library/Application Support/RDM-ARM/overrides/`，删条目不会丢别的键。
+- **不会立即生效。** macOS 只在显示器重新挂载时读取这张表：拔插一次线缆或重启后，
+  新尺寸才会出现在分辨率菜单里。应用不会假称已经生效，窗口里写得很清楚。
+- **这是 Apple 芯片上唯一能加尺寸的路线。** 5K 面板的时序超过 EDID 描述符 655.35 MHz
+  的像素时钟上限，`--custom-timing` 根本编不进去；`scale-resolutions` 不新增时序，
+  只在现有原生时序上叠一个 backing 尺寸，所以 5K 也能用。
+- **会多出一条 1× 条目。** 一条 4608 × 2592 会同时生成 `2304 × 1296 ⚡️` 和 1×
+  `4608 × 2592`。后者没有面板声明过的输出时序，菜单会把它隐藏；命令行仍然如实列出。
+- **移除**：分辨率 → 移除缩放分辨率 → 选条目。删除后再拔插/重启，尺寸从菜单消失。
+
+本机实测（M4 Max / macOS 27.0.1 / Studio Display）：加入 4608 × 2592 并重新插拔后，
+模式表从 26 档变成 28 档，`2304 × 1296 ⚡️` 可直接切换；`IOServiceRequestProbe`
+返回 `kIOReturnUnsupported`，重配当前模式也不会重读，所以「拔插或重启」不是提示，
+是这个机制本身。
+
+### 所有显示器：同分辨率与镜像
+
+两块屏想显示同一套布局时，不必逐屏钻菜单：
+
+- **所有显示器 → 相同分辨率**：列出每一块屏都支持的几何尺寸（键 = 点尺寸 + 是否 HiDPI），
+  刷新率取各屏都有的最高档。点击后所有屏幕在**一个** CoreGraphics 事务里一起切换，
+  中途失败整体回滚，不会留下切了一半的桌面。
+- **与主显示器一致**：把主屏当前尺寸应用到其他屏；某块屏缺这个尺寸时条目禁用，
+  tooltip 直接点名是哪块。
+- **镜像所有显示器到主屏 / 停止镜像**：镜像与模式切换在同一个事务里提交。
+  主屏当前的时序必须在每块从屏上都存在，否则不会让点下去才失败。
+- 「相同分辨率」只考虑公开模式；私有模式表里的条目没有 `CGDisplayMode`，
+  无法与镜像/批量事务共存，因此不进入这一层。
+
+顺带修掉了同型号显示器的身份冲突：记忆键里加入了 `CGDisplayUnitNumber`，
+两块序列号都为 0 的同型号屏不再互相覆盖。旧格式的键仍会回退读取一次，升级不会丢记忆。
 
 ### 命令行
 
@@ -356,7 +407,7 @@ xcrun stapler validate build/RDM-ARM-<版本>-universal.dmg
 ### CI 与构建约束
 
 CI（`.github/workflows/build.yml`）在干净的 macOS runner 上验证通用构建、bundle 结构、
-两个架构切片都在、版本号与 `AppInfo.swift` 一致、CLI 冒烟，并产出 DMG。
+两个架构切片都在、版本号在 `build.sh` / `AppInfo.swift` / `Info.plist` 三处一致、CLI 冒烟，并产出 DMG。
 **它不跑 GUI** —— 菜单栏图标无法从进程外验证，runner 也没有显示器；GUI 用 `--selftest` 手工验。
 CI 也**不做公证**（runner 上没有本机钥匙串凭据），要公证得改用 App Store Connect API key。
 
@@ -382,14 +433,15 @@ CI 也**不做公证**（runner 上没有本机钥匙串凭据），要公证得
 | 亮度 | `DisplayServicesGet/SetBrightness` | 外接屏不支持，自动隐藏 | 私有 |
 | **EDID 读取** | IOKit 类匹配 `IOPortTransportStateDisplayPort` | 读通 256 字节，校验和有效，厂商/型号/序号与 CG 一致 | 公开（`CGDisplayIOServicePort` 在 Apple 芯片返回 0，不可用） |
 | **链路预算 / 刷新范围** | `DisplayHints` / `DisplayAttributes` | 594 MHz、50–76 Hz | **私有类名**（可选模块） |
+| **自定义缩放分辨率** | `/Library/.../Overrides` 的 `scale-resolutions` | **写入并重新挂载后生效**：Studio Display 26 → 28 档，`2304 × 1296 ⚡️` 实测可切换 | 公开写入路径（无需 SIP） |
 | **自定义时序** | 改写 `IODisplayEDID` → `/Library/Displays/.../Overrides` | **Apple 芯片：写得进、读不到，`--write` 直接拒绝（退出码 3）**；Intel 可用 | 公开写入路径，无 SIP |
 | **刷新率审计** | 公开模式表 + EDID 声明 + 链路预算三者交叉比对 | 区分「系统藏了 / 面板没写 / 链路不够」，并暴露 HiDPI 的点尺寸≠输出时序 | 公开 |
 
 新增的几块都遵守同一条边界：EDID 解析、时序计算、审计判定在 `Core/`（纯数据、无副作用），Apple 私有类名的属性读取和 override 写入在 `Optional/`。
 
-override 能不能用，按**硬件**判定（`sysctlbyname("hw.optional.arm64")`），不是编译期 `#if arch(arm64)`：universal 包的 x86_64 slice 在 Apple 芯片上经 Rosetta 运行时，编译期判断会以为自己在 Intel 上，进而放开一条写了也不被读取的路径——那一步会先要管理员密码。硬件属性从哪个 slice 读都一样。
+override 能不能用，按**机制**判定，不是按目录判定：`IODisplayEDID` 在 Apple 芯片上写入后被忽略（所以 `--write` 直接拒绝），`scale-resolutions` 则会被重新挂载时读取。EDID 这条闸门仍按**硬件**判定（`sysctlbyname("hw.optional.arm64")`），不是编译期 `#if arch(arm64)`：universal 包的 x86_64 slice 在 Apple 芯片上经 Rosetta 运行时，编译期判断会以为自己在 Intel 上，进而放开一条写了也不被读取的路径——那一步会先要管理员密码。硬件属性从哪个 slice 读都一样。
 
-**关于审计的可信度**：判定逻辑有 25 条断言覆盖（`--selftest-timing` 现在共 45 条：41 条合成、4 条真机）。四种成因各钉一条——因为它们的修法完全不同，"看起来合理"是不够的；其中 10 条走的是**整条审计装配链**（合成 EDID → 模式表 → 按输出几何分组 → 排序 → 判定），不是单独调 `verdict()`，所以分组和排序也会被咬住。另有断言钉住：59.94 与 60 必须算同一个答案、`unknown` 不许冒充 `unreachable`、「已经可用」必须取面积最大的那行而不是表格第一行。关键几条都做过 mutation 验证（把实现改坏，确认对应断言真的 FAIL）。
+**关于审计的可信度**：判定逻辑有 25 条断言覆盖（`--selftest-timing` 现在共 66 条：62 条合成、4 条真机；没有 CEA 短格式的面板会少一条并标 `SKIP`）。四种成因各钉一条——因为它们的修法完全不同，"看起来合理"是不够的；其中 10 条走的是**整条审计装配链**（合成 EDID → 模式表 → 按输出几何分组 → 排序 → 判定），不是单独调 `verdict()`，所以分组和排序也会被咬住。另有断言钉住：59.94 与 60 必须算同一个答案、`unknown` 不许冒充 `unreachable`、「已经可用」必须取面积最大的那行而不是表格第一行。自定义缩放分辨率的字节格式、合并/移除、跨屏交集、旋转下的 HiDPI 判定、同型号显示器身份也各有断言。关键几条都做过 mutation 验证（把实现改坏，确认对应断言真的 FAIL）。
 
 说清楚这块还差什么：`hidden` 分支现在有合成样本，但**没有真机样本**——本机这块面板的 EDID 声明被 macOS 全部列了出来，造不出「声明了但系统没列」的现场。要真验这条，得换一台 Intel 机器走一次 override 路线。
 
@@ -421,15 +473,17 @@ Sources/
     DisplayRotationController.swift  旋转（能力探测）
     DisplayBrightnessController.swift 亮度（能力探测）
     DisplayLinkInfo.swift            链路预算 / 刷新范围（私有类名，只读）
-    DisplayOverrideInstaller.swift   写/撤 /Library 下的 EDID override
+    DisplayOverrideInstaller.swift   按 key 合并写入 /Library 下的 override
+    ScaleResolutionStore.swift       scale-resolutions 的编解码、差集与合并
     CustomTimingEngine.swift         合成 → 预算校验 → 写入 → 重新枚举
   Features/
     ModeMemoryController.swift    每屏记忆 + 热插拔恢复
     Preferences.swift             偏好设置持久化
   UI/
     AppDelegate.swift         菜单栏生命周期
-    StatusMenuBuilder.swift   菜单构建
+    StatusMenuBuilder.swift   菜单构建（含「所有显示器」与自定义分辨率入口）
     MenuActionRouter.swift    菜单动作分发
+    CustomResolutionWindow.swift 添加/移除缩放分辨率（AppKit）
     SettingsWindow.swift      设置窗口（AppKit）
     GUISelfTest.swift         --selftest 诊断
   CLI/
@@ -448,7 +502,7 @@ Tools/
 
 - **亮度控制**在外接显示器上不可用（需要 DDC/CI 通路，这台 BenQ 没有暴露）。内置屏应该正常。
 - **隐藏 HiDPI 模式依赖私有模式表**：这张表的记录结构 Apple 从未公开，而且在变——macOS 27 上 `depth` / `refreshRate` 字段已经读不出正确值（所以这些模式没有独立刷新率，沿用同尺寸公开模式的值）。一旦偏移再变，`PrivateModeTable` 的自检会失败并整体停用，菜单里就只剩公开模式。
-- 目前发布的包是 **ad-hoc 签名**，没有 Apple 公证。首次打开可能需要在"系统设置 → 隐私与安全性"里放行。构建脚本已支持 Developer ID 签名与公证（见「构建」一节），拿到证书后重新出包即可。
+- 已发布的包使用 **Developer ID 签名并通过 Apple 公证**（见「构建」一节），首次打开不需要额外操作；只有本机没有证书、自己从源码构建时才回退 ad-hoc，需要手动放行。
 - 部署目标 **macOS 13.0**。旋转依赖的私有符号在更早的系统上可能不存在，此时会自动隐藏旋转菜单。
 - 构建工具链**最低已验证到 Xcode 15.4 / Swift 5.10**（CI runner）。早期版本用过会失败的写法
   （`CGRect` 的 `Hashable` 合成）已修掉，但更老的工具链未做验证。
@@ -461,7 +515,7 @@ Tools/
 
 ## 与上游的关系
 
-RDM 由 [Avi Alkalay](https://github.com/avibrazil/RDM) 开发，是 macOS 分辨率解锁工具的经典实现。这个项目**不是 fork**——没有复用它的代码，而是重新实现的：原版是 Objective-C++ 加私有 SPI，重写版是 Swift，以公开 API 为底，只把公开接口拿不到的那三件（旋转、亮度、隐藏 HiDPI 模式）交给可关闭的私有模块。
+RDM 由 [Avi Alkalay](https://github.com/avibrazil/RDM) 开发，是 macOS 分辨率解锁工具的经典实现。这个项目**不是 fork**——没有复用它的代码，而是重新实现的：原版是 Objective-C++ 加私有 SPI，重写版是 Swift，以公开 API 为底，只把公开接口拿不到的那几件（旋转、亮度、隐藏 HiDPI 模式、链路预算读取）交给可关闭的私有模块。
 
 上游仓库没有附任何正式许可证文件，README 中作者表示"作者们会乐意你自由使用"。本重写版按原样（as-is）提供，供个人使用。
 
