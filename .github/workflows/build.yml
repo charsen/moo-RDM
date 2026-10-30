@@ -92,6 +92,12 @@ jobs:
           "$BIN" -lm --json | python3 -c "import json,sys; d=json.load(sys.stdin); assert all({'width','height','pixelWidth','pixelHeight','scale','hiDPI','refreshRate','usable','modeID','flags'} <= set(m) for x in d['displays'] for m in x.get('modes', []))"
           "$BIN" --help | grep -q -- '--usable-only'
           "$BIN" --help | grep -q -- '--permanent'
+          # Argument validation must not depend on an attached display.
+          set +e
+          "$BIN" --custom-resolution nope
+          code=$?
+          set -e
+          test "$code" -eq 2 || { echo "::error::custom-resolution syntax exited $code"; exit 1; }
           # Asking about a display that is not there must be a clean exit 1 with a
           # message, not a crash: `--refresh-audit` reads EDID through IOKit and
           # enumerates modes, and neither is guaranteed to return anything.
