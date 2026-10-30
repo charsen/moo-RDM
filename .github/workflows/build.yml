@@ -93,11 +93,12 @@ jobs:
           "$BIN" --help | grep -q -- '--usable-only'
           "$BIN" --help | grep -q -- '--permanent'
           # Argument validation must not depend on an attached display.
-          set +e
-          "$BIN" --custom-resolution nope
-          code=$?
-          set -e
-          test "$code" -eq 2 || { echo "::error::custom-resolution syntax exited $code"; exit 1; }
+          # Scaled resolutions are hidden for now (see TODOS.md); their flags
+          # must not reappear in help until the entry points are restored.
+          if "$BIN" --help | grep -q -- '--custom-resolution'; then
+            echo "::error::custom-resolution is hidden but still in help"
+            exit 1
+          fi
           # Asking about a display that is not there must be a clean exit 1 with a
           # message, not a crash: `--refresh-audit` reads EDID through IOKit and
           # enumerates modes, and neither is guaranteed to return anything.

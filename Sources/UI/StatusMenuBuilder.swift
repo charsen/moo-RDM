@@ -253,33 +253,8 @@ enum StatusMenuBuilder {
             submenu.addItem(header)
         }
 
-        // Adding a size is a write, but not a mode change: nothing is applied
-        // until the display is re-attached. That is why it belongs in the menu,
-        // unlike a custom timing, which can black the screen the moment it lands.
-        submenu.addItem(.separator())
-        let add = action(L10n.t("menu.customResolution"),
-                         #selector(MenuActionRouter.addScaledResolution(_:)), router)
-        add.representedObject = DisplayBox(displayID: display.id)
-        submenu.addItem(add)
-
-        let custom = DisplayOverrideInstaller.scaledResolutions(
-            vendor: CGDisplayVendorNumber(display.id),
-            product: CGDisplayModelNumber(display.id)
-        )
-        if !custom.isEmpty {
-            let header = NSMenuItem(title: L10n.t("menu.removeCustomResolution"),
-                                    action: nil, keyEquivalent: "")
-            let child = NSMenu()
-            for resolution in custom {
-                let item = action(resolution.label,
-                                  #selector(MenuActionRouter.removeScaledResolution(_:)), router)
-                item.representedObject = ResolutionBox(displayID: display.id,
-                                                       resolution: resolution)
-                child.addItem(item)
-            }
-            header.submenu = child
-            submenu.addItem(header)
-        }
+        // Custom scaled-resolution entry points are hidden for now; the window,
+        // router actions and override store stay in the target. See TODOS.md.
     }
 
     /// One resolution row, including where a click should land.

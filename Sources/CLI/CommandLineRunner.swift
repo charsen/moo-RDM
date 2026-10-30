@@ -179,10 +179,8 @@ public enum CommandLineRunner {
                 options.refreshAudit = true
             case "--custom-timing":
                 options.customTiming = try value(argument)
-            case "--custom-resolution", "--scaled-resolution":
-                options.customResolution = try value(argument)
-            case "--remove-resolution":
-                options.removeResolution = try value(argument)
+            // Scaled-resolution flags are intentionally not parsed while the
+            // feature is hidden. The implementation below is kept for re-enable.
             case "--write":
                 options.writeOverride = true
             case "--keep":

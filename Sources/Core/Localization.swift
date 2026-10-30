@@ -215,7 +215,7 @@ public enum L10n {
         "error.timingNoEDID": "Could not read this display's EDID",
         "error.timingNoNative": "This display reports no native timing to build on",
         "error.timingGeometry": "The native timing cannot be scaled to %@",
-        "error.timingClockCeiling": "This timing needs about %d MHz, but an EDID descriptor's pixel clock tops out at 655 MHz. Add a scaled resolution from the menu instead — it adds a backing size without a new timing",
+        "error.timingClockCeiling": "This timing needs about %d MHz, but an EDID descriptor's pixel clock tops out at 655 MHz",
         "error.timingBudget": "%d Hz is beyond what this link allows (about %d Hz)",
         "error.timingNoSlot": "The EDID has no free descriptor slot for another timing",
         "error.timingSyntax": "Expected a timing like 3840x2160@75",
@@ -272,11 +272,7 @@ public enum L10n {
               --capabilities    Summarise hidden rates and the hardware ceiling
               --refresh-audit   Explain gaps between declared, offered and possible rates
               --custom-timing   Synthesise <width>x<height>@<hz>; add --write to install
-              --custom-resolution <w>x<h>
-                                Add a scaled HiDPI size; add --write to install
-              --remove-resolution <w>x<h>
-                                Remove one of ours; add --write to apply
-              --write           Install the override (EDID timing or scaled resolution)
+              --write           Install the EDID timing override
               --keep            Keep the override instead of rolling it back
               --revert          Remove a previously installed EDID override
               --sleep-wake      Force re-enumeration with a display power cycle
@@ -307,8 +303,6 @@ public enum L10n {
           rdm-arm --refresh-audit -r 60 -d 1
           rdm-arm --refresh-audit -r 75 --json | jq .verdict
           rdm-arm --custom-timing 1920x1080@75 --write --keep -d 1
-          rdm-arm --custom-resolution 2304x1296 --write -d 0
-          rdm-arm --remove-resolution 2304x1296 --write -d 0
         """,
 
         "lang.system": "Match system",
@@ -475,7 +469,7 @@ public enum L10n {
         "error.timingNoEDID": "读不到此显示器的 EDID",
         "error.timingNoNative": "此显示器没有可用于推算的原生时序",
         "error.timingGeometry": "原生时序无法缩放到 %@",
-        "error.timingClockCeiling": "这个时序需要约 %d MHz，而 EDID 描述符的像素时钟上限是 655 MHz。请改用菜单里的「添加缩放分辨率…」——它只增加渲染尺寸，不新增时序",
+        "error.timingClockCeiling": "这个时序需要约 %d MHz，而 EDID 描述符的像素时钟上限是 655 MHz",
         "error.timingBudget": "%d Hz 超出链路能力（约 %d Hz）",
         "error.timingNoSlot": "EDID 里没有空闲的时序描述符槽位",
         "error.timingSyntax": "格式应为 3840x2160@75",
@@ -532,11 +526,7 @@ public enum L10n {
               --capabilities    汇总隐藏刷新率与硬件上限
               --refresh-audit   逐分辨率说明「声明 / 系统给出 / 链路可行」的差距
               --custom-timing   合成 <宽>x<高>@<Hz>；加 --write 才会写入
-              --custom-resolution <w>x<h>
-                                添加一个缩放 HiDPI 尺寸；加 --write 才写入
-              --remove-resolution <w>x<h>
-                                移除一个自定义尺寸；加 --write 才生效
-              --write           写入 override（EDID 时序或缩放分辨率）
+              --write           写入 EDID 时序 override
               --keep            保留 override，不自动回滚
               --revert          移除之前安装的 EDID override
               --sleep-wake      用显示器断电/上电强制重新枚举
@@ -567,8 +557,6 @@ public enum L10n {
           rdm-arm --refresh-audit -r 60 -d 1
           rdm-arm --refresh-audit -r 75 --json | jq .verdict
           rdm-arm --custom-timing 1920x1080@75 --write --keep -d 1
-          rdm-arm --custom-resolution 2304x1296 --write -d 0
-          rdm-arm --remove-resolution 2304x1296 --write -d 0
         """,
 
         "lang.system": "跟随系统",

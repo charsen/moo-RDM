@@ -91,7 +91,6 @@ CGDisplayCopyAllDisplayModes(display, [
 | **亮度** | 支持的显示器上显示连续滑杆 |
 | **登录时启动** | 设置里开启，由 `SMAppService` 管理，需要时提示到系统设置授权 |
 | **全局快捷键** | ⌘, / ⌘Q 在状态菜单关闭时也生效（最小应用主菜单） |
-| **自定义缩放分辨率** | 菜单与 CLI 都能给面板补 macOS 没列出的尺寸，写入 `/Library` override，重插后生效 |
 | **所有显示器** | 同分辨率、与主屏一致、镜像/停止镜像，一次事务提交 |
 | **显示配置预设** | 保存/一键应用整套分辨率、旋转、镜像、排列位置与亮度；缺失显示器点名跳过 |
 
@@ -119,7 +118,7 @@ ARZOPA 多出来的 9 个是 `1920 × 1200`、`2048 × 1280`、`2560 × 1600`、
 | 路线 | 做法 | 在 Apple 芯片上 |
 |---|---|---|
 | 按属性合成模式 | 未声明但导出的 `CGDisplayModeCreate` + 公开的 `Width` / `Height` / `RefreshRate` 键 | **已废**：实测连"原样重建当前模式"都返回 `NULL` |
-| 改写 EDID | 给面板的 EDID 塞一个 18 字节 detailed timing，写进系统 override 目录 | **`IODisplayEDID` 写入可用、读取不生效**：真机实测 macOS 27 在 Apple 芯片上仍枚举面板原厂 EDID。同一目录下的 `scale-resolutions` 会被读取，见下面的「自定义缩放分辨率」 |
+| 改写 EDID | 给面板的 EDID 塞一个 18 字节 detailed timing，写进系统 override 目录 | **`IODisplayEDID` 写入可用、读取不生效**：真机实测 macOS 27 在 Apple 芯片上仍枚举面板原厂 EDID。同一目录下的 `scale-resolutions` 路径存在，但入口暂时隐藏 |
 | 私有实时注入 | 不落文件，直接把 EDID 推进显示管线 | BetterDisplay 在 Apple 芯片上用的就是这条；本机没有可用入口（详见下文） |
 
 RDM-ARM 走第二条，但先把"能不能"算清楚再动手：
@@ -249,38 +248,6 @@ Apple 芯片上真正可行的是私有实时注入（BetterDisplay 走的那条
 
 如果目标分辨率根本没有描述符（4K 面板只用一字节 CEA 码描述 1080p），才退回按原生时序的 blanking 比例缩放，并在输出里标注 `no descriptor at this geometry`——那是近似，不是原厂值。
 
-### 自定义缩放分辨率
-
-面板没有、但 macOS 又能渲染的尺寸，可以从菜单里直接加：
-
-> 菜单栏 → 某块屏 → **分辨率 → 添加缩放分辨率…**
-
-填「宽 / 高（点）」，窗口会实时显示对应的渲染尺寸（2× backing）。常用尺寸可以直接从预设下拉里选；已经在列表里的尺寸会标「已可用」并禁用，避免白写一次。写入的是
-`/Library/Displays/Contents/Resources/Overrides/DisplayVendorID-<厂商>/DisplayProductID-<型号>`
-里的 `scale-resolutions` 数组，一条 8 字节 big-endian `(渲染宽, 渲染高)`：
-
-```
-2304 × 1296  →  00 00 12 00 00 00 0A 20   (4608 × 2592)
-```
-
-几件必须知道的事：
-
-- **需要一次管理员密码。** 文件写在 `/Library`，不关 SIP。写入前会把原文件备份到
-  `~/Library/Application Support/RDM-ARM/overrides/`，删条目不会丢别的键。
-- **不会立即生效。** macOS 只在显示器重新挂载时读取这张表：拔插一次线缆或重启后，
-  新尺寸才会出现在分辨率菜单里。应用不会假称已经生效，窗口里写得很清楚。
-- **这是 Apple 芯片上唯一能加尺寸的路线。** 5K 面板的时序超过 EDID 描述符 655.35 MHz
-  的像素时钟上限，`--custom-timing` 根本编不进去；`scale-resolutions` 不新增时序，
-  只在现有原生时序上叠一个 backing 尺寸，所以 5K 也能用。
-- **会多出一条 1× 条目。** 一条 4608 × 2592 会同时生成 `2304 × 1296 ⚡️` 和 1×
-  `4608 × 2592`。后者没有面板声明过的输出时序，菜单会把它隐藏；命令行仍然如实列出。
-- **移除**：分辨率 → 移除缩放分辨率 → 选条目。删除后再拔插/重启，尺寸从菜单消失。
-
-本机实测（M4 Max / macOS 27.0.1 / Studio Display）：加入 4608 × 2592 并重新插拔后，
-模式表从 26 档变成 28 档，`2304 × 1296 ⚡️` 可直接切换；`IOServiceRequestProbe`
-返回 `kIOReturnUnsupported`，重配当前模式也不会重读，所以「拔插或重启」不是提示，
-是这个机制本身。
-
 ### 所有显示器：同分辨率与镜像
 
 两块屏想显示同一套布局时，不必逐屏钻菜单：
@@ -332,8 +299,6 @@ rdm-arm --refresh-audit            # 某个刷新率为什么拿不到，逐分�
 rdm-arm --refresh-audit -r 75      # 指定目标刷新率
 rdm-arm --refresh-audit -r 75 --json | jq .verdict   # 同一份结论，机器可读
 rdm-arm --custom-timing 3840x2160@65 --write   # 合成 4K@65 并试写，20 秒自动回滚
-rdm-arm --custom-resolution 2304x1296 --write  # 添加缩放分辨率，重插后生效
-rdm-arm --remove-resolution 2304x1296 --write  # 移除自定义尺寸
 rdm-arm --selftest-timing          # EDID/时序、预设与排列自检，不碰系统，无显示器也能跑
 rdm-arm --selftest                 # GUI 自检：菜单栏图标位置 + 菜单结构
 rdm-arm --selftest --roundtrip     # 自检并真实跑一遍「切换 → 还原」
@@ -343,9 +308,7 @@ rdm-arm --selftest --roundtrip     # 自检并真实跑一遍「切换 → 还�
 
 命令行切换时如果指定的刷新率在该尺寸上不存在，不会静默替换：会打印实际使用的刷新率和该尺寸可用的档位。切换成功后也会更新按屏记忆，重新插拔或下次启动不会回退到旧模式。
 
-5K 面板还有一条单独的诊断：合成时序需要约 862 MHz，而 EDID 描述符的像素时钟字段上限是 655.35 MHz，`--custom-timing` 会直接说明「卡在描述符，不是显示器」，并指向菜单里的自定义缩放分辨率。
-
-`--custom-resolution` / `--remove-resolution` 与菜单共用同一个 `scale-resolutions` override：不加 `--write` 只打印将要做什么，加 `--write` 才写入并提示重新插拔或重启。它不会当场切换模式，所以没有 `--custom-timing` 那种自动回滚窗口。
+5K 面板还有一条单独的诊断：合成时序需要约 862 MHz，而 EDID 描述符的像素时钟字段上限是 655.35 MHz，`--custom-timing` 会直接说明「卡在描述符，不是显示器」。
 
 `--selftest` 值得单独说一句：菜单栏图标是否真的显示出来，**无法从进程外部验证**——`CGWindowListCopyWindowInfo` 不枚举菜单栏项，截屏又需要录屏权限。所以自检从进程内部报告窗口服务器实际把图标放在了哪里，是唯一可靠的办法。加上 `--roundtrip` 后会真的切换一次分辨率再还原，用来验证「切换 → 还原」这条链路确实通。
 
@@ -491,7 +454,7 @@ CI 也**不做公证**（runner 上没有本机钥匙串凭据），要公证得
 | 亮度 | `DisplayServicesGet/SetBrightness` | 外接屏不支持，自动隐藏 | 私有 |
 | **EDID 读取** | IOKit 类匹配 `IOPortTransportStateDisplayPort` | 读通 256 字节，校验和有效，厂商/型号/序号与 CG 一致 | 公开（`CGDisplayIOServicePort` 在 Apple 芯片返回 0，不可用） |
 | **链路预算 / 刷新范围** | `DisplayHints` / `DisplayAttributes` | 594 MHz、50–76 Hz | **私有类名**（可选模块） |
-| **自定义缩放分辨率** | `/Library/.../Overrides` 的 `scale-resolutions` | **写入并重新挂载后生效**：Studio Display 26 → 28 档，`2304 × 1296 ⚡️` 实测可切换 | 公开写入路径（无需 SIP） |
+| **自定义缩放分辨率（入口暂时隐藏）** | `/Library/.../Overrides` 的 `scale-resolutions` | **写入并重新挂载后生效**：Studio Display 26 → 28 档，`2304 × 1296 ⚡️` 实测可切换 | 公开写入路径（无需 SIP） |
 | **自定义时序** | 改写 `IODisplayEDID` → `/Library/Displays/.../Overrides` | **Apple 芯片：写得进、读不到，`--write` 直接拒绝（退出码 3）**；Intel 可用 | 公开写入路径，无 SIP |
 | **刷新率审计** | 公开模式表 + EDID 声明 + 链路预算三者交叉比对 | 区分「系统藏了 / 面板没写 / 链路不够」，并暴露 HiDPI 的点尺寸≠输出时序 | 公开 |
 
@@ -544,7 +507,7 @@ Sources/
     AppDelegate.swift         菜单栏生命周期
     StatusMenuBuilder.swift   菜单构建（所有显示器、预设、自定义分辨率入口）
     MenuActionRouter.swift    菜单动作分发
-    CustomResolutionWindow.swift 添加/移除缩放分辨率（AppKit）
+    CustomResolutionWindow.swift 添加/移除缩放分辨率（AppKit，入口暂时隐藏）
     SettingsWindow.swift      设置窗口（AppKit）
     GUISelfTest.swift         --selftest 诊断
   CLI/
@@ -570,6 +533,7 @@ Tools/
 - **切换立即生效，没有确认框、也没有自动还原**。RDM 列出的模式里有一部分被 macOS 标记为不适合桌面 GUI；如果选中的模式显示器显示不出来，画面会变黑，而菜单栏恰好就在这块屏上。此时可以用键盘盲操作菜单退回安全模式（菜单里始终有「恢复系统默认」），或在终端用命令行改回来。
 - 多屏镜像（mirroring）状态下部分模式不可用，这是 macOS 本身的限制。
 - **自定义时序在 Apple 芯片上只算不写**。真机验证（M4 Max / macOS 27.0.1 / BenQ PD2705U）的结论是：override 文件写得完全正确，系统却不读它——实时 EDID 仍是面板原厂值，拔插线缆、显示器休眠、整机睡眠三种重载触发都试过，模式表 290 条一动不动。所以 `--write` 在 Apple 芯片上直接拒绝（退出码 3），不再让你输密码再告诉你没变化；菜单和 `--capabilities` 也会如实标注。Intel 机器上这条路线保持原样可用。将来系统若修复，设 `RDM_ALLOW_EDID_OVERRIDE=1` 可绕过闸门复验。
+- **自定义缩放分辨率入口暂时隐藏**：菜单与 CLI 入口已收起，实现与自检保留在源码里；重新放出前需要补一次管理员写入的真机验证。见 `TODOS.md`。
 - **链路预算依赖私有类名**（`AppleATCDPAltModePort` 等）。这些名字随系统变动时，预算会变成"未知"，`--custom-timing` 仍能算出时序，但不会再声称知道天花板——宁可少说，不可乱说。
 - **主屏指定不随预设恢复**：预设记录分辨率、旋转、镜像、排列位置与亮度；CoreGraphics 只有 `CGConfigureDisplayOrigin`（排列），没有设置主屏的公开 API，macOS 27 上也没有探测到可用的私有符号。
 - **未内置虚拟屏**：Apple 芯片上另一条补尺寸路线是 `CGVirtualDisplay` 加硬件镜像；它需要虚拟屏生命周期、镜像拓扑与清理策略，暂不纳入本工具。
