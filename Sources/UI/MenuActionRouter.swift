@@ -327,6 +327,16 @@ final class MenuActionRouter: NSObject {
 
     @objc func deletePreset(_ sender: NSMenuItem) {
         guard let box = sender.representedObject as? PresetBox else { return }
+
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = L10n.t("menu.preset.delete.confirm", box.preset.name)
+        alert.informativeText = L10n.t("menu.preset.delete.hint")
+        alert.addButton(withTitle: L10n.t("common.ok"))
+        alert.addButton(withTitle: L10n.t("common.cancel"))
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
         var presets = Preferences.shared.displayPresets
         presets.removeAll { $0.id == box.preset.id }
         Preferences.shared.displayPresets = presets

@@ -152,6 +152,12 @@ enum DisplayPresetEngine {
                 report.failures.append("\(state.name): \(L10n.t("error.noSuchMode", description))")
                 continue
             }
+            if state.refreshRate > 0, abs(mode.refreshRate - state.refreshRate) > 0.5 {
+                report.failures.append(L10n.t("menu.preset.rate",
+                                              state.name,
+                                              Int32(state.refreshRate.rounded()),
+                                              Int32(mode.refreshRate.rounded())))
+            }
             assignments.append(ModeController.Assignment(displayID: display.id, mode: mode))
         }
 
