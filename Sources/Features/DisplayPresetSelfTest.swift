@@ -22,7 +22,8 @@ enum DisplayPresetSelfTest {
         }
 
         let sampleDisplay = PresetDisplay(name: "Studio Display", width: 2304, height: 1296,
-                                          scale: 2, refreshRate: 60, rotation: 0, brightness: 0.5)
+                                          scale: 2, refreshRate: 60, rotation: 0, brightness: 0.5,
+                                          originX: 0, originY: 0)
         let samplePreset = DisplayPreset(
             id: UUID(uuidString: "11111111-2222-3333-4444-555555555555")!,
             name: "Work",

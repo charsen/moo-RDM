@@ -98,14 +98,18 @@ public enum ModeController {
     /// "mirroring unmirrored itself" surprise.
     ///
     /// Order matters: a display leaving a mirror set is detached first, then
-    /// modes are assigned, then the new mirror links are made. Applying a mode
-    /// to a still-mirrored display is the case that fails on some GPUs.
+    /// origins and modes are assigned, then the new mirror links are made.
+    /// Applying a mode to a still-mirrored display is the case that fails on some
+    /// GPUs, and setting an origin on a mirrored display removes it from the set.
     @discardableResult
     public static func apply(_ assignments: [Assignment],
                              mirroring mirror: [CGDirectDisplayID: CGDirectDisplayID] = [:],
                              unmirroring unmirror: [CGDirectDisplayID] = [],
+                             origins: [CGDirectDisplayID: CGPoint] = [:],
                              permanently: Bool = false) -> Result<Void, ApplyError> {
-        guard !assignments.isEmpty || !mirror.isEmpty || !unmirror.isEmpty else { return .success(()) }
+        guard !assignments.isEmpty || !mirror.isEmpty || !unmirror.isEmpty || !origins.isEmpty else {
+            return .success(())
+        }
 
         // Drop work that would not change anything. Reapplying the current mode
         // (or the same mirror link) still opens a display configuration and makes
@@ -118,8 +122,13 @@ public enum ModeController {
             CGDisplayMirrorsDisplay(slave) != master
         }
         let pendingUnmirror = unmirror.filter { CGDisplayMirrorsDisplay($0) != kCGNullDirectDisplay }
+        let pendingOrigins = origins.filter { displayID, point in
+            let current = CGDisplayBounds(displayID).origin
+            return abs(current.x - point.x) > 0.5 || abs(current.y - point.y) > 0.5
+        }
 
-        guard !pendingAssignments.isEmpty || !pendingMirror.isEmpty || !pendingUnmirror.isEmpty else {
+        guard !pendingAssignments.isEmpty || !pendingMirror.isEmpty
+                || !pendingUnmirror.isEmpty || !pendingOrigins.isEmpty else {
             return .success(())
         }
 
@@ -138,6 +147,17 @@ public enum ModeController {
 
         for displayID in pendingUnmirror {
             let result = CGConfigureDisplayMirrorOfDisplay(config, displayID, kCGNullDirectDisplay)
+            guard result == .success else {
+                CGCancelDisplayConfiguration(config)
+                return .failure(.configureFailed(result))
+            }
+        }
+
+        for (displayID, origin) in pendingOrigins {
+            let result = CGConfigureDisplayOrigin(config,
+                                                  displayID,
+                                                  Int32(origin.x.rounded()),
+                                                  Int32(origin.y.rounded()))
             guard result == .success else {
                 CGCancelDisplayConfiguration(config)
                 return .failure(.configureFailed(result))

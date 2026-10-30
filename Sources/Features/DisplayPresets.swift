@@ -11,9 +11,14 @@ public struct PresetDisplay: Codable, Hashable {
     public var rotation: Double
     /// `nil` when the display does not support software brightness.
     public var brightness: Float?
+    /// Global display origin. Optional so presets saved before arrangement
+    /// capture still decode (and are applied without moving anything).
+    public var originX: Int?
+    public var originY: Int?
 
     public init(name: String, width: Int, height: Int, scale: Double,
-                refreshRate: Double, rotation: Double, brightness: Float?) {
+                refreshRate: Double, rotation: Double, brightness: Float?,
+                originX: Int? = nil, originY: Int? = nil) {
         self.name = name
         self.width = width
         self.height = height
@@ -21,6 +26,8 @@ public struct PresetDisplay: Codable, Hashable {
         self.refreshRate = refreshRate
         self.rotation = rotation
         self.brightness = brightness
+        self.originX = originX
+        self.originY = originY
     }
 }
 
@@ -60,8 +67,8 @@ enum DisplayPresetEngine {
         var appliedCleanly: Bool { missing.isEmpty && failures.isEmpty }
     }
 
-    /// Snapshots the current topology, modes, rotation, mirror links and
-    /// brightness. Returns `nil` when there is nothing to capture.
+    /// Snapshots the current topology, modes, rotation, mirror links,
+    /// arrangement and brightness. Returns `nil` when there is nothing to capture.
     static func capture(name: String) -> DisplayPreset? {
         let displays = DisplayManager.allInfos()
         var states: [String: PresetDisplay] = [:]
@@ -71,6 +78,7 @@ enum DisplayPresetEngine {
             let brightness = DisplayBrightnessController.canChangeBrightness(of: display.id)
                 ? DisplayBrightnessController.brightness(of: display.id)
                 : nil
+            let origin = display.bounds.origin
             states[display.identity.key] = PresetDisplay(
                 name: display.name,
                 width: mode.width,
@@ -78,7 +86,9 @@ enum DisplayPresetEngine {
                 scale: mode.scale,
                 refreshRate: mode.refreshRate,
                 rotation: display.rotation,
-                brightness: brightness
+                brightness: brightness,
+                originX: Int(origin.x.rounded()),
+                originY: Int(origin.y.rounded())
             )
         }
         guard !states.isEmpty else { return nil }
@@ -99,8 +109,8 @@ enum DisplayPresetEngine {
     ///
     /// Rotation is a separate private call and cannot join the CoreGraphics
     /// transaction, so it runs first; the mode table is re-read afterwards
-    /// because rotation changes which timings exist. Modes, unmirroring and the
-    /// new mirror links then land in one transaction.
+    /// because rotation changes which timings exist. Origins, modes,
+    /// unmirroring and the new mirror links then land in one transaction.
     static func apply(_ preset: DisplayPreset) -> ApplyReport {
         var report = ApplyReport()
         let sorted = preset.displays.sorted { $0.value.name < $1.value.name }
@@ -169,6 +179,17 @@ enum DisplayPresetEngine {
             desiredMirrors[slave.id] = master.id
         }
 
+        // Arrangement is applied for displays that are not becoming a mirror
+        // slave; a slave's position follows its master. Presets saved before
+        // arrangement capture have no origin and leave the layout alone.
+        var origins: [CGDirectDisplayID: CGPoint] = [:]
+        for (key, state) in sorted {
+            guard let display = resolved[key],
+                  let x = state.originX, let y = state.originY,
+                  desiredMirrors[display.id] == nil else { continue }
+            origins[display.id] = CGPoint(x: CGFloat(x), y: CGFloat(y))
+        }
+
         // Detach every mirrored display this preset owns before assigning modes:
         // setting a mode while a display is still in a mirror set is the case that
         // fails on some GPUs. Desired links are re-established after assignments.
@@ -177,10 +198,11 @@ enum DisplayPresetEngine {
             .filter { $0.isMirrored && presetIDs.contains($0.id) }
             .map(\.id)
 
-        if !assignments.isEmpty || !desiredMirrors.isEmpty || !unmirror.isEmpty {
+        if !assignments.isEmpty || !desiredMirrors.isEmpty || !unmirror.isEmpty || !origins.isEmpty {
             switch ModeController.apply(assignments,
                                         mirroring: desiredMirrors,
                                         unmirroring: unmirror,
+                                        origins: origins,
                                         permanently: Preferences.shared.permanentChanges) {
             case .success:
                 report.applied = assignments.map(\.displayID)
