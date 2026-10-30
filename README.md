@@ -384,6 +384,32 @@ MOO_RDM_NOTARIZE=1 MOO_RDM_NOTARY_PROFILE=moo ./Tools/package-release.sh
 只有 `xcrun notarytool history --keychain-profile moo` 能确认它还在。凭据是机器本地的，
 换机后要重新 `store-credentials`。
 
+签名私钥同样不在仓库里，也不只剩在这台机器的钥匙串里。三个 macOS 项目（本仓、Moo Fleet、
+桌宠）共用一份备份，放在 iCloud 云盘的 `backups/certs/`——访达里是「iCloud 云盘 ›
+backups › certs」，shell 路径：
+
+```bash
+CERTS="$HOME/Library/Mobile Documents/com~apple~CloudDocs/backups/certs"
+```
+
+里面是加密的 `.p12`（三条身份的证书 + 私钥）、证书链与叶证书两份 PEM，以及恢复步骤
+说明。`.p12` 的密码**不落任何文件**，只存在密码管理器里；忘了密码这份备份就等于没备份。
+
+从云盘拉回本机后先收权限再导入——同步不保证保留 600，落到别的设备上这些文件是明文可读的：
+
+```bash
+chmod 700 "$CERTS" && chmod 600 "$CERTS"/*.p12 "$CERTS"/*.pem
+
+security import "$CERTS/signing-identities-2026-10-28.p12" \
+  -k "$HOME/Library/Keychains/login.keychain-db" -P '<p12 密码>' -T /usr/bin/codesign
+security set-key-partition-list -S apple-tool:,apple: -s \
+  -k '<登录密码>' "$HOME/Library/Keychains/login.keychain-db"
+security find-identity -v -p codesigning   # 应恢复出 3 个 valid identities
+```
+
+云盘只解决「换机能拿到」，它不是离线介质：第二份副本仍建议放密码管理器附件或一个不常插的
+U 盘，并且别和 `.p12` 密码放在同一介质上。
+
 公证链上四条硬约束，改 `build.sh` 时别绕过：
 
 - 提交归档用 `ditto -c -k --keepParent`，**不能用 `zip`**——`zip` 会压平 bundle 的符号链接并丢扩展属性，公证直接拒绝。
