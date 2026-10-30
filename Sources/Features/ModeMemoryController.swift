@@ -63,6 +63,8 @@ final class ModeMemoryController {
     /// `start()` only registers callbacks, so before this a quit-and-relaunch
     /// dropped the "remember" promise until the display was re-attached.
     func restoreAfterLaunch() {
+        guard Preferences.shared.rememberPerDisplay,
+              Preferences.shared.restoreOnLaunch else { return }
         scheduleRestore()
     }
 

@@ -35,6 +35,7 @@ public final class Preferences {
         static let hiDPIOnly           = "hiDPIOnly"
         static let permanentChanges    = "permanentChanges"
         static let rememberPerDisplay  = "rememberPerDisplay"
+        static let restoreOnLaunch     = "restoreOnLaunch"
         static let restoreOnWake       = "restoreOnWake"
         static let enableOptionalModule = "enableOptionalModule"
         static let language            = "language"
@@ -52,6 +53,7 @@ public final class Preferences {
             Key.hiDPIOnly: true,
             Key.permanentChanges: false,
             Key.rememberPerDisplay: true,
+            Key.restoreOnLaunch: true,
             Key.restoreOnWake: true,
             Key.enableOptionalModule: true,
         ])
@@ -70,7 +72,8 @@ public final class Preferences {
 
         let keys = [
             Key.showUnusableModes, Key.hiDPIOnly, Key.permanentChanges,
-            Key.rememberPerDisplay, Key.restoreOnWake, Key.enableOptionalModule,
+            Key.rememberPerDisplay, Key.restoreOnLaunch, Key.restoreOnWake,
+            Key.enableOptionalModule,
             Key.language, Key.rememberedModes, Key.displayPresets,
             Key.hasCompletedOnboarding,
         ]
@@ -117,6 +120,15 @@ public final class Preferences {
     public var rememberPerDisplay: Bool {
         get { defaults.bool(forKey: Key.rememberPerDisplay) }
         set { defaults.set(newValue, forKey: Key.rememberPerDisplay); changed() }
+    }
+
+    /// Apply remembered modes immediately after the app launches.
+    ///
+    /// Off keeps the memory for reconnects and wake, but lets a mode the user
+    /// changed in System Settings survive a quit-and-relaunch.
+    public var restoreOnLaunch: Bool {
+        get { defaults.bool(forKey: Key.restoreOnLaunch) }
+        set { defaults.set(newValue, forKey: Key.restoreOnLaunch); changed() }
     }
 
     public var restoreOnWake: Bool {

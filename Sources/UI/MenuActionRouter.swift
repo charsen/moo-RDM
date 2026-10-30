@@ -130,6 +130,14 @@ final class MenuActionRouter: NSObject {
         // Picking the mode that is already active is a no-op.
         if display(mode.displayID)?.currentMode?.isSame(as: mode) == true { return }
 
+        // A mirror slave follows its master's timing; changing its mode alone
+        // leaves the set inconsistent. The menu hides these rows, but a stale
+        // menu can still deliver the action.
+        guard CGDisplayMirrorsDisplay(mode.displayID) == kCGNullDirectDisplay else {
+            report(L10n.t("error.mirroredMode"))
+            return
+        }
+
         // Applied straight away — no confirmation panel. The switch is meant to
         // be immediate: pick a resolution, see the result. Anything that asks a
         // question first turns a one-click action into a dialog.
@@ -248,6 +256,10 @@ final class MenuActionRouter: NSObject {
             return
         }
         if target.currentMode?.isSame(as: sourceMode) == true { return }
+        guard !target.isMirrored else {
+            report(L10n.t("error.mirroredMode"))
+            return
+        }
 
         guard let targetMode = ModeController.findMode(
             on: target.id,

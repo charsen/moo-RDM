@@ -53,6 +53,7 @@ final class SettingsViewController: NSViewController, NSTabViewDelegate {
     private var showUnusableCheckbox: NSButton?
     private var hiDPIOnlyCheckbox: NSButton?
     private var rememberCheckbox: NSButton?
+    private var restoreOnLaunchCheckbox: NSButton?
     private var restoreOnWakeCheckbox: NSButton?
     private var forgetAllButton: NSButton?
     private var launchAtLoginCheckbox: NSButton?
@@ -219,6 +220,7 @@ final class SettingsViewController: NSViewController, NSTabViewDelegate {
         showUnusableCheckbox = nil
         hiDPIOnlyCheckbox = nil
         rememberCheckbox = nil
+        restoreOnLaunchCheckbox = nil
         restoreOnWakeCheckbox = nil
         forgetAllButton = nil
         launchAtLoginCheckbox = nil
@@ -234,7 +236,10 @@ final class SettingsViewController: NSViewController, NSTabViewDelegate {
         showUnusableCheckbox?.state = Preferences.shared.showUnusableModes ? .on : .off
         hiDPIOnlyCheckbox?.state = Preferences.shared.hiDPIOnly ? .on : .off
         rememberCheckbox?.state = Preferences.shared.rememberPerDisplay ? .on : .off
+        restoreOnLaunchCheckbox?.state = Preferences.shared.restoreOnLaunch ? .on : .off
+        restoreOnLaunchCheckbox?.isEnabled = Preferences.shared.rememberPerDisplay
         restoreOnWakeCheckbox?.state = Preferences.shared.restoreOnWake ? .on : .off
+        restoreOnWakeCheckbox?.isEnabled = Preferences.shared.rememberPerDisplay
         forgetAllButton?.isEnabled = !Preferences.shared.rememberedModes.isEmpty
         launchAtLoginCheckbox?.state = LoginItemController.isEnabled ? .on : .off
         launchAtLoginCheckbox?.isEnabled = LoginItemController.state != .unavailable
@@ -294,6 +299,14 @@ final class SettingsViewController: NSViewController, NSTabViewDelegate {
         rememberCheckbox = remember
         stack.addArrangedSubview(remember)
         addFullWidth(hint(L10n.t("settings.rememberPerDisplay.hint")), to: stack)
+
+        let restoreOnLaunch = checkbox(L10n.t("settings.restoreOnLaunch"),
+                                       on: Preferences.shared.restoreOnLaunch,
+                                       action: #selector(toggleRestoreOnLaunch(_:)))
+        restoreOnLaunch.isEnabled = Preferences.shared.rememberPerDisplay
+        restoreOnLaunchCheckbox = restoreOnLaunch
+        stack.addArrangedSubview(restoreOnLaunch)
+        addFullWidth(hint(L10n.t("settings.restoreOnLaunch.hint")), to: stack)
 
         let restore = checkbox(L10n.t("settings.restoreOnWake"),
                                on: Preferences.shared.restoreOnWake,
@@ -466,6 +479,10 @@ final class SettingsViewController: NSViewController, NSTabViewDelegate {
 
     @objc private func toggleRemember(_ sender: NSButton) {
         Preferences.shared.rememberPerDisplay = sender.state == .on
+    }
+
+    @objc private func toggleRestoreOnLaunch(_ sender: NSButton) {
+        Preferences.shared.restoreOnLaunch = sender.state == .on
     }
 
     @objc private func toggleRestoreOnWake(_ sender: NSButton) {

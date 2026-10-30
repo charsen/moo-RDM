@@ -100,17 +100,26 @@ enum StatusMenuBuilder {
         }
         submenu.addItem(.separator())
 
-        submenu.addItem(lazyModesItem(.resolutions, snapshot: snapshot,
-                                      hiddenTwins: hiddenTwins, router: router))
-        // A fixed-rate panel already prints its rate in the header. A one-row
-        // "Refresh rate" submenu is a hop without a choice, so only offer it
-        // when there is another rate to pick.
-        let visibleRates = Set(menuModes(snapshot, hiddenTwins: hiddenTwins)
-            .filter { $0.refreshRate > 0 }
-            .map { Int($0.refreshRate.rounded()) })
-        if snapshot.display.currentMode != nil, visibleRates.count > 1 {
-            submenu.addItem(lazyModesItem(.refreshRates, snapshot: snapshot,
+        // A mirror slave follows its master's timing. Offering per-display mode
+        // changes here produced a mirror set whose members reported different
+        // modes while still linked; leave the rows out and point at the way out.
+        let isMirrorSlave = CGDisplayMirrorsDisplay(display.id) != kCGNullDirectDisplay
+        if isMirrorSlave {
+            submenu.addItem(disabled(L10n.t("menu.mirroredHint")))
+            submenu.addItem(.separator())
+        } else {
+            submenu.addItem(lazyModesItem(.resolutions, snapshot: snapshot,
                                           hiddenTwins: hiddenTwins, router: router))
+            // A fixed-rate panel already prints its rate in the header. A one-row
+            // "Refresh rate" submenu is a hop without a choice, so only offer it
+            // when there is another rate to pick.
+            let visibleRates = Set(menuModes(snapshot, hiddenTwins: hiddenTwins)
+                .filter { $0.refreshRate > 0 }
+                .map { Int($0.refreshRate.rounded()) })
+            if snapshot.display.currentMode != nil, visibleRates.count > 1 {
+                submenu.addItem(lazyModesItem(.refreshRates, snapshot: snapshot,
+                                              hiddenTwins: hiddenTwins, router: router))
+            }
         }
         submenu.addItem(capabilitiesItem(for: display))
         submenu.addItem(.separator())
@@ -121,7 +130,7 @@ enum StatusMenuBuilder {
         reset.representedObject = box
         submenu.addItem(reset)
 
-        if let matchItem = matchDisplayItem(for: display, router: router) {
+        if !display.isMirrored, let matchItem = matchDisplayItem(for: display, router: router) {
             submenu.addItem(matchItem)
         }
 
@@ -734,6 +743,10 @@ enum StatusMenuBuilder {
 
         let parent = NSMenuItem(title: L10n.t("menu.rotation"), action: nil, keyEquivalent: "")
         let submenu = NSMenu()
+        if isStudioDisplay(display) {
+            submenu.addItem(disabled(L10n.t("menu.rotation.studioHint")))
+            submenu.addItem(.separator())
+        }
         let current = DisplayRotationController.currentRotation(of: display.id)
 
         for angle in DisplayRotationController.supportedAngles {
