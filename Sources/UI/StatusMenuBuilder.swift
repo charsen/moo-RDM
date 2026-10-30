@@ -11,26 +11,17 @@ enum StatusMenuBuilder {
     static func build(into menu: NSMenu, router: MenuActionRouter) {
         menu.removeAllItems()
 
-        let snapshots = DisplayManager.snapshots(includeUnusable: Preferences.shared.showUnusableModes)
-        let hiddenTwins = hiddenStandardSizes(for: snapshots)
-        // Decode once per menu build instead of once per display.
-        let rememberedModes = Preferences.shared.rememberedModes
+        let displays = DisplayManager.allInfos()
 
-        if snapshots.isEmpty {
+        if displays.isEmpty {
             menu.addItem(disabled(L10n.t("menu.noDisplays")))
         } else {
-            if snapshots.count >= 2,
-               let all = allDisplaysItem(snapshots: snapshots, hiddenTwins: hiddenTwins, router: router) {
-                menu.addItem(all)
+            if displays.count >= 2 {
+                menu.addItem(allDisplaysItem(router: router))
                 menu.addItem(.separator())
             }
-            let displays = snapshots.map(\.display)
-            for snapshot in snapshots {
-                menu.addItem(displayItem(snapshot,
-                                         hiddenTwins: hiddenTwins[snapshot.display.id] ?? [],
-                                         rememberedModes: rememberedModes,
-                                         among: displays,
-                                         router: router))
+            for display in displays {
+                menu.addItem(displayItem(display, among: displays, router: router))
             }
         }
 
@@ -74,15 +65,30 @@ enum StatusMenuBuilder {
 
     // MARK: - Per-display submenu
 
-    private static func displayItem(_ snapshot: DisplaySnapshot,
-                                    hiddenTwins: Set<PixelSize>,
-                                    rememberedModes: [String: RememberedMode],
+    private static func displayItem(_ display: DisplayInfo,
                                     among displays: [DisplayInfo],
                                     router: MenuActionRouter) -> NSMenuItem {
-        let display = snapshot.display
         let parent = NSMenuItem(title: displayTitle(display, among: displays),
                                 action: nil, keyEquivalent: "")
         let submenu = NSMenu()
+        let lazy = LazyDisplayMenu(display: display, router: router)
+        submenu.delegate = lazy
+        objc_setAssociatedObject(submenu, &lazyDisplayDelegateKey, lazy,
+                                 .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        parent.submenu = submenu
+        return parent
+    }
+
+    fileprivate static func populateDisplay(into submenu: NSMenu,
+                                            for info: DisplayInfo,
+                                            router: MenuActionRouter) {
+        let ids = DisplayManager.onlineDisplayIDs()
+        guard let ordinal = ids.firstIndex(of: info.id) else { return }
+        let snapshot = DisplayManager.snapshot(info.id, ordinal: ordinal,
+                                                includeUnusable: Preferences.shared.showUnusableModes)
+        let display = snapshot.display
+        let hiddenTwins = hiddenStandardSizes(for: [snapshot])[display.id] ?? []
+        let rememberedModes = Preferences.shared.rememberedModes
 
         // Header: what the display is doing right now.
         submenu.addItem(disabled("   " + display.currentDescription))
@@ -120,9 +126,6 @@ enum StatusMenuBuilder {
         if let brightnessItem = brightnessItem(for: display, router: router) {
             submenu.addItem(brightnessItem)
         }
-
-        parent.submenu = submenu
-        return parent
     }
 
     // MARK: - Resolution and refresh rate
@@ -192,6 +195,8 @@ enum StatusMenuBuilder {
     }
 
     private static var lazyModesDelegateKey: UInt8 = 0
+    private static var lazyDisplayDelegateKey: UInt8 = 0
+    private static var lazyAllDisplaysDelegateKey: UInt8 = 0
 
     fileprivate static func populateResolutions(into submenu: NSMenu,
                                                 for snapshot: DisplaySnapshot,
@@ -378,14 +383,23 @@ enum StatusMenuBuilder {
 
     // MARK: - All displays
 
-    private static func allDisplaysItem(snapshots: [DisplaySnapshot],
-                                        hiddenTwins: [CGDirectDisplayID: Set<PixelSize>],
-                                        router: MenuActionRouter) -> NSMenuItem? {
-        let active = snapshots.filter { !$0.modes.isEmpty }
-        guard active.count >= 2 else { return nil }
-
+    private static func allDisplaysItem(router: MenuActionRouter) -> NSMenuItem {
         let parent = NSMenuItem(title: L10n.t("menu.allDisplays"), action: nil, keyEquivalent: "")
         let submenu = NSMenu()
+        let lazy = LazyAllDisplaysMenu(router: router)
+        submenu.delegate = lazy
+        objc_setAssociatedObject(submenu, &lazyAllDisplaysDelegateKey, lazy,
+                                 .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        parent.submenu = submenu
+        return parent
+    }
+
+    fileprivate static func populateAllDisplays(into submenu: NSMenu,
+                                                router: MenuActionRouter) {
+        let snapshots = DisplayManager.snapshots(includeUnusable: Preferences.shared.showUnusableModes)
+        let hiddenTwins = hiddenStandardSizes(for: snapshots)
+        let active = snapshots.filter { !$0.modes.isEmpty }
+        guard active.count >= 2 else { return }
 
         let isFiltering = Preferences.shared.hiDPIOnly
         func publicModes(_ snapshot: DisplaySnapshot) -> [DisplayMode] {
@@ -476,9 +490,6 @@ enum StatusMenuBuilder {
             submenu.addItem(action(L10n.t("menu.stopMirroring"),
                                    #selector(MenuActionRouter.stopMirroring(_:)), router))
         }
-
-        parent.submenu = submenu
-        return parent
     }
 
     private static func assignments(for choice: ResolutionChoice,
@@ -772,5 +783,39 @@ private final class LazyModesMenu: NSObject, NSMenuDelegate {
                                                    hiddenTwins: hiddenTwins,
                                                    router: router)
         }
+    }
+}
+
+/// Builds a display's own submenu when it is opened. The top-level menu only
+/// needs the display's name; the mode table, native size and status entries are
+/// paid for on hover.
+private final class LazyDisplayMenu: NSObject, NSMenuDelegate {
+
+    private let display: DisplayInfo
+    private let router: MenuActionRouter
+
+    init(display: DisplayInfo, router: MenuActionRouter) {
+        self.display = display
+        self.router = router
+    }
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
+        StatusMenuBuilder.populateDisplay(into: menu, for: display, router: router)
+    }
+}
+
+/// Builds the "All displays" submenu when it is opened; it needs every mode table.
+private final class LazyAllDisplaysMenu: NSObject, NSMenuDelegate {
+
+    private let router: MenuActionRouter
+
+    init(router: MenuActionRouter) {
+        self.router = router
+    }
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
+        StatusMenuBuilder.populateAllDisplays(into: menu, router: router)
     }
 }
