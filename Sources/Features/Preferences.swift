@@ -55,6 +55,30 @@ public final class Preferences {
             Key.restoreOnWake: true,
             Key.enableOptionalModule: true,
         ])
+        Self.migrateLegacyDefaultsIfNeeded(defaults)
+    }
+
+    /// 1.2.1 shipped under `io.rdmarm.RDM-ARM`; 1.2.2 moved to the current bundle
+    /// id. Copying once, only while the current domain is still empty, keeps
+    /// remembered modes and preferences across that upgrade. A later first-run
+    /// does not overwrite settings the new domain already has.
+    private static func migrateLegacyDefaultsIfNeeded(_ defaults: UserDefaults) {
+        guard Bundle.main.bundleIdentifier == AppInfo.bundleIdentifier else { return }
+        let persisted = defaults.persistentDomain(forName: AppInfo.bundleIdentifier) ?? [:]
+        guard persisted.isEmpty else { return }
+        guard let legacy = UserDefaults(suiteName: "io.rdmarm.RDM-ARM") else { return }
+
+        let keys = [
+            Key.showUnusableModes, Key.hiDPIOnly, Key.permanentChanges,
+            Key.rememberPerDisplay, Key.restoreOnWake, Key.enableOptionalModule,
+            Key.language, Key.rememberedModes, Key.displayPresets,
+            Key.hasCompletedOnboarding,
+        ]
+        for key in keys {
+            if let value = legacy.object(forKey: key) {
+                defaults.set(value, forKey: key)
+            }
+        }
     }
 
     private func changed() {
