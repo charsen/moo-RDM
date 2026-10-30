@@ -102,7 +102,13 @@ enum StatusMenuBuilder {
 
         submenu.addItem(lazyModesItem(.resolutions, snapshot: snapshot,
                                       hiddenTwins: hiddenTwins, router: router))
-        if snapshot.display.currentMode != nil {
+        // A fixed-rate panel already prints its rate in the header. A one-row
+        // "Refresh rate" submenu is a hop without a choice, so only offer it
+        // when there is another rate to pick.
+        let visibleRates = Set(menuModes(snapshot, hiddenTwins: hiddenTwins)
+            .filter { $0.refreshRate > 0 }
+            .map { Int($0.refreshRate.rounded()) })
+        if snapshot.display.currentMode != nil, visibleRates.count > 1 {
             submenu.addItem(lazyModesItem(.refreshRates, snapshot: snapshot,
                                           hiddenTwins: hiddenTwins, router: router))
         }
@@ -114,6 +120,10 @@ enum StatusMenuBuilder {
                            #selector(MenuActionRouter.resetToDefault(_:)), router)
         reset.representedObject = box
         submenu.addItem(reset)
+
+        if let matchItem = matchDisplayItem(for: display, router: router) {
+            submenu.addItem(matchItem)
+        }
 
         if rememberedModes[display.identity.key] != nil
             || rememberedModes[display.identity.legacyKey] != nil {
@@ -129,6 +139,47 @@ enum StatusMenuBuilder {
         if let brightnessItem = brightnessItem(for: display, router: router) {
             submenu.addItem(brightnessItem)
         }
+    }
+
+    // MARK: - Match another display
+
+    /// One-click "make this display look like that one".
+    ///
+    /// With exactly two displays this is a direct row; with more, a submenu so
+    /// the target display is named. Only the current display is touched.
+    private static func matchDisplayItem(for display: DisplayInfo,
+                                         router: MenuActionRouter) -> NSMenuItem? {
+        let displays = DisplayManager.allInfos()
+        let others = displays.filter { $0.id != display.id }
+        guard !others.isEmpty else { return nil }
+        let current = display.currentMode
+
+        func makeItem(for other: DisplayInfo, title: String) -> NSMenuItem {
+            let item = action(title, #selector(MenuActionRouter.matchDisplay(_:)), router)
+            item.representedObject = MatchDisplayBox(targetID: display.id,
+                                                     sourceID: other.id)
+            item.state = current?.isSame(as: other.currentMode) == true ? .on : .off
+            item.toolTip = L10n.t("menu.matchAnother.hint")
+            return item
+        }
+
+        if others.count == 1 {
+            let other = others[0]
+            return makeItem(for: other,
+                            title: L10n.t("menu.matchDisplay",
+                                          displayTitle(other, among: displays)))
+        }
+
+        let header = NSMenuItem(title: L10n.t("menu.matchAnother"),
+                                action: nil, keyEquivalent: "")
+        header.toolTip = L10n.t("menu.matchAnother.hint")
+        let child = NSMenu()
+        for other in others {
+            child.addItem(makeItem(for: other,
+                                   title: "\(displayTitle(other, among: displays)) · \(other.currentDescription)"))
+        }
+        header.submenu = child
+        return header
     }
 
     // MARK: - Resolution and refresh rate
@@ -175,6 +226,54 @@ enum StatusMenuBuilder {
             if !sizes.isEmpty { result[id] = Set(sizes) }
         }
         return result
+    }
+
+    // MARK: - Studio Display favorites
+
+    private struct StudioModeChoice {
+        let titleKey: String
+        let width: Int
+        let height: Int
+        let scale: Double
+        let hintKey: String?
+    }
+
+    private static let studioChoices: [StudioModeChoice] = [
+        StudioModeChoice(titleKey: "studio.native5k", width: 5120, height: 2880,
+                         scale: 1, hintKey: "studio.native5k.hint"),
+        StudioModeChoice(titleKey: "studio.default", width: 2560, height: 1440,
+                         scale: 2, hintKey: nil),
+        StudioModeChoice(titleKey: "studio.moreSpace", width: 2880, height: 1620,
+                         scale: 2, hintKey: nil),
+        StudioModeChoice(titleKey: "studio.largerUI", width: 2304, height: 1296,
+                         scale: 2, hintKey: nil),
+        StudioModeChoice(titleKey: "studio.compat", width: 1920, height: 1080,
+                         scale: 2, hintKey: nil),
+    ]
+
+    private static func isStudioDisplay(_ display: DisplayInfo) -> Bool {
+        let identity = display.identity
+        return (identity.vendor == 0x0610 && identity.model == 0xAE46)
+            || display.name.localizedCaseInsensitiveContains("Studio Display")
+    }
+
+    /// Curated rows only for sizes the display actually offers right now.
+    ///
+    /// A stock Studio Display will not have 2304 × 1296 unless the matching
+    /// `scale-resolutions` override is installed; the row simply does not appear.
+    private static func studioEntries(for display: DisplayInfo,
+                                      from modes: [DisplayMode])
+        -> [(mode: DisplayMode, titleKey: String, hintKey: String?)] {
+        guard isStudioDisplay(display) else { return [] }
+        return studioChoices.compactMap { choice in
+            guard let mode = modes.first(where: {
+                $0.width == choice.width
+                    && $0.height == choice.height
+                    && abs($0.scale - choice.scale) < 0.01
+                    && $0.isUsable
+            }) else { return nil }
+            return (mode, choice.titleKey, choice.hintKey)
+        }
     }
 
     /// A submenu whose contents are built only when it is opened.
@@ -229,7 +328,22 @@ enum StatusMenuBuilder {
             .deduplicated(preferring: current)
             .groupedByResolution()
 
-        if groups.isEmpty {
+        let curatedStudio = studioEntries(for: display, from: all)
+        if !curatedStudio.isEmpty {
+            submenu.addItem(disabled(L10n.t("menu.studioCommon")))
+            for entry in curatedStudio {
+                let mode = entry.mode
+                let item = action("\(L10n.t(entry.titleKey)) · \(mode.menuTitle)",
+                                  #selector(MenuActionRouter.selectMode(_:)), router)
+                item.representedObject = ModeBox(mode)
+                item.state = mode.isSame(as: current) ? .on : .off
+                if let hintKey = entry.hintKey { item.toolTip = L10n.t(hintKey) }
+                submenu.addItem(item)
+            }
+            submenu.addItem(.separator())
+        }
+
+        if groups.isEmpty && standardGroups.isEmpty && curatedStudio.isEmpty {
             submenu.addItem(disabled(L10n.t("menu.noModes")))
         }
 
@@ -287,10 +401,9 @@ enum StatusMenuBuilder {
     /// Listing rates from every geometry would make this a second resolution
     /// picker. Rates that would drag the geometry along are simply not offered.
     ///
-    /// The menu appears even when the display offers a single rate. Hiding it
-    /// makes a working display look like a broken feature — a lone ticked entry
-    /// says "this panel only does 60 Hz", which is the honest answer, rather than
-    /// saying nothing at all.
+    /// The parent display menu only offers this when there is more than one rate.
+    /// A fixed-rate panel already prints its rate in the header; a one-row
+    /// submenu is a hop without a choice.
     fileprivate static func populateRefreshRates(into submenu: NSMenu,
                                                  for snapshot: DisplaySnapshot,
                                                  hiddenTwins: Set<PixelSize>,
@@ -664,6 +777,16 @@ enum StatusMenuBuilder {
         let control = NSMenuItem()
         control.view = slider
         submenu.addItem(control)
+
+        submenu.addItem(.separator())
+        for percent in [25, 50, 75, 100] {
+            let value = Float(percent) / 100
+            let item = action(L10n.t("menu.brightness.preset", Int32(percent)),
+                              #selector(MenuActionRouter.setBrightnessPreset(_:)), router)
+            item.representedObject = BrightnessPresetBox(displayID: display.id, value: value)
+            item.state = abs((current ?? -1) - value) < 0.02 ? .on : .off
+            submenu.addItem(item)
+        }
 
         parent.submenu = submenu
         return parent

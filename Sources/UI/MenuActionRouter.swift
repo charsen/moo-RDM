@@ -57,6 +57,27 @@ final class PresetBox: NSObject {
     init(_ preset: DisplayPreset) { self.preset = preset }
 }
 
+/// A one-way match: make `targetID` use the mode `sourceID` is in now.
+final class MatchDisplayBox: NSObject {
+    let targetID: CGDirectDisplayID
+    let sourceID: CGDirectDisplayID
+
+    init(targetID: CGDirectDisplayID, sourceID: CGDirectDisplayID) {
+        self.targetID = targetID
+        self.sourceID = sourceID
+    }
+}
+
+final class BrightnessPresetBox: NSObject {
+    let displayID: CGDirectDisplayID
+    let value: Float
+
+    init(displayID: CGDirectDisplayID, value: Float) {
+        self.displayID = displayID
+        self.value = value
+    }
+}
+
 // MARK: - Router
 
 /// Target for every menu item action.
@@ -169,6 +190,17 @@ final class MenuActionRouter: NSObject {
         _ = DisplayBrightnessController.setBrightness(sender.floatValue, on: displayID)
     }
 
+    @objc func setBrightnessPreset(_ sender: NSMenuItem) {
+        guard let box = sender.representedObject as? BrightnessPresetBox else { return }
+        switch DisplayBrightnessController.setBrightness(box.value, on: box.displayID) {
+        case .success:
+            break
+        case .failure(let error):
+            report(error.description)
+        }
+        onMenuNeedsRebuild?()
+    }
+
     // MARK: - Multiple displays
 
     private func applyMatch(_ box: MatchBox) {
@@ -200,6 +232,50 @@ final class MenuActionRouter: NSObject {
     @objc func matchDisplays(_ sender: NSMenuItem) {
         guard let box = sender.representedObject as? MatchBox else { return }
         applyMatch(box)
+    }
+
+    /// Make one display use the mode another display is in right now.
+    ///
+    /// Only the target is touched. If the geometry exists at a different rate,
+    /// the highest rate is used and the substitution is reported instead of
+    /// pretending the match was exact.
+    @objc func matchDisplay(_ sender: NSMenuItem) {
+        guard let box = sender.representedObject as? MatchDisplayBox,
+              let target = display(box.targetID),
+              let source = display(box.sourceID),
+              let sourceMode = source.currentMode else {
+            report(L10n.t("error.matchDisplayGone"))
+            return
+        }
+        if target.currentMode?.isSame(as: sourceMode) == true { return }
+
+        guard let targetMode = ModeController.findMode(
+            on: target.id,
+            width: sourceMode.width,
+            height: sourceMode.height,
+            scale: sourceMode.scale,
+            refreshRate: sourceMode.refreshRate,
+            includeUnusable: Preferences.shared.showUnusableModes
+        ) else {
+            report(L10n.t("error.matchGeometry", source.name, sourceMode.menuTitle))
+            onMenuNeedsRebuild?()
+            return
+        }
+
+        switch ModeController.apply(targetMode,
+                                    permanently: Preferences.shared.permanentChanges) {
+        case .success:
+            memory.remember(displayID: target.id)
+            if abs(targetMode.refreshRate - sourceMode.refreshRate) >= 0.5 {
+                report(L10n.t("error.matchRefresh",
+                              source.name,
+                              sourceMode.detailedTitle,
+                              targetMode.detailedTitle))
+            }
+        case .failure(let error):
+            report(error.description)
+        }
+        onMenuNeedsRebuild?()
     }
 
     @objc func mirrorDisplays(_ sender: NSMenuItem) {
