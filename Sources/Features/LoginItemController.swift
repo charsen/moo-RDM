@@ -34,7 +34,10 @@ enum LoginItemController {
         case .notRegistered:
             return .disabled
         case .notFound:
-            return .unavailable
+            // Current macOS reports `.notFound` for a main app that has never
+            // been registered. Treating that as unavailable would disable the
+            // checkbox on every fresh install; register() is still valid.
+            return .disabled
         @unknown default:
             return .unavailable
         }
