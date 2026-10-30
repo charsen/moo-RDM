@@ -304,7 +304,7 @@ fi
 if [ "$ARCH_TAG" = "universal" ]; then
   ARCH_NOTE="系统要求：macOS $MIN_MACOS 或更高。通用二进制（arm64 + x86_64）。"
 else
-  ARCH_NOTE="系统要求：macOS $MIN_MACOS 或更高。架构：$ARCH_TAG。"
+  ARCH_NOTE="系统要求：macOS $MIN_MACOS 或更高。架构：${ARCH_TAG}。"
 fi
 
 cat > "$STAGE/安装说明.txt" <<NOTE
