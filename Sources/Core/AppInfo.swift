@@ -27,9 +27,10 @@ public enum AppInfo {
         lines.append("SLSSetDisplayRotation present: \(DisplayRotationController.isSymbolPresent)")
         lines.append("private mode table: \(PrivateModeTable.isSymbolPresent ? "present" : "absent")")
 
-        let displays = DisplayManager.allDisplays()
-        lines.append("displays: \(displays.count)")
-        for display in displays {
+        let snapshots = DisplayManager.snapshots()
+        lines.append("displays: \(snapshots.count)")
+        for snapshot in snapshots {
+            let display = snapshot.display
             lines.append("  [\(display.ordinal)] \(display.name)")
             lines.append("      id=\(display.id) builtin=\(display.isBuiltin) main=\(display.isMain)")
             lines.append("      identity=\(display.identity.key)")
@@ -38,7 +39,7 @@ public enum AppInfo {
             if let native = display.nativePixelSize {
                 lines.append("      native=\(native.description)")
             }
-            let all = DisplayManager.allModes(for: display.id)
+            let all = snapshot.modes
             let exposed = all.filter { !$0.isPrivate }
             let usable = exposed.filter(\.isUsable).count
             let hiDPI = exposed.filter(\.isHiDPI).count

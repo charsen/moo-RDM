@@ -229,7 +229,9 @@ public enum CommandLineRunner {
     // MARK: - Resolving the target display
 
     private static func targetDisplay(_ options: Options) throws -> DisplayInfo {
-        let displays = DisplayManager.allDisplays()
+        // Only identity/name/current mode are needed here; enumerating the mode
+        // table (and the private table) for every command was pure overhead.
+        let displays = DisplayManager.allInfos()
         guard !displays.isEmpty else {
             throw ParseError(message: L10n.t("menu.noDisplays"))
         }
@@ -242,21 +244,27 @@ public enum CommandLineRunner {
     // MARK: - Actions
 
     private static func listDisplays(_ options: Options) -> Int32 {
-        let displays = DisplayManager.allDisplays()
+        // One enumeration per display: the snapshot already carries the mode
+        // counts that used to be read a second time inside this loop.
+        let snapshots = DisplayManager.snapshots()
 
         if options.json {
             printJSON(RootDTO(version: AppInfo.version,
                               architecture: AppInfo.architecture,
-                              displays: displays.map { dto($0, includeModes: false, options: options) }))
+                              displays: snapshots.map {
+                                  dto($0.display, allModes: $0.modes,
+                                      includeModes: false, options: options)
+                              }))
             return 0
         }
 
-        guard !displays.isEmpty else {
+        guard !snapshots.isEmpty else {
             print(L10n.t("menu.noDisplays"))
             return 0
         }
 
-        for display in displays {
+        for snapshot in snapshots {
+            let display = snapshot.display
             var tags: [String] = []
             if display.isBuiltin { tags.append("builtin") }
             if display.isMain { tags.append("main") }
@@ -271,7 +279,7 @@ public enum CommandLineRunner {
             if let native = display.nativePixelSize {
                 print("    native      \(native.description)")
             }
-            let modes = DisplayManager.allModes(for: display.id)
+            let modes = snapshot.modes
             print("    modes       \(modes.count) total, "
                   + "\(modes.filter(\.isUsable).count) usable, "
                   + "\(modes.filter(\.isHiDPI).count) HiDPI")
@@ -280,22 +288,32 @@ public enum CommandLineRunner {
     }
 
     private static func listModes(_ options: Options) -> Int32 {
-        let displays = DisplayManager.allDisplays()
-        guard !displays.isEmpty else {
+        if options.json {
+            let snapshots = DisplayManager.snapshots(includeUnusable: true)
+            guard !snapshots.isEmpty else {
+                print(L10n.t("menu.noDisplays"))
+                return 0
+            }
+            printJSON(RootDTO(version: AppInfo.version,
+                              architecture: AppInfo.architecture,
+                              displays: snapshots.map {
+                                  dto($0.display, allModes: $0.modes,
+                                      includeModes: true, options: options)
+                              }))
+            return 0
+        }
+
+        // Text output only needs the rows it is going to print; with
+        // --usable-only that means skipping the private table entirely.
+        let snapshots = DisplayManager.snapshots(includeUnusable: options.includeUnusable)
+        guard !snapshots.isEmpty else {
             print(L10n.t("menu.noDisplays"))
             return 0
         }
 
-        if options.json {
-            printJSON(RootDTO(version: AppInfo.version,
-                              architecture: AppInfo.architecture,
-                              displays: displays.map { dto($0, includeModes: true, options: options) }))
-            return 0
-        }
-
-        for display in displays {
-            var modes = DisplayManager.allModes(for: display.id,
-                                                includeUnusable: options.includeUnusable)
+        for snapshot in snapshots {
+            let display = snapshot.display
+            var modes = snapshot.modes
             if options.hiDPIOnly { modes = modes.filter(\.isHiDPI) }
             if let width = options.width { modes = modes.filter { $0.width == width } }
             if let height = options.height { modes = modes.filter { $0.height == height } }
@@ -965,16 +983,19 @@ public enum CommandLineRunner {
                 modeID: mode.modeID, flags: mode.flags.names)
     }
 
-    private static func dto(_ display: DisplayInfo, includeModes: Bool, options: Options) -> DisplayDTO {
-        // One enumeration per display: the filtered list and the counters all
-        // come from the same table, and a second read could disagree with the
-        // first if the topology changes in between.
-        let all = DisplayManager.allModes(for: display.id, includeUnusable: true)
-        var modes = options.includeUnusable ? all : all.filter { $0.isUsable && !$0.isPrivate }
-        if options.hiDPIOnly { modes = modes.filter(\.isHiDPI) }
-        if let width = options.width { modes = modes.filter { $0.width == width } }
-        if let height = options.height { modes = modes.filter { $0.height == height } }
-        if let scale = options.scale { modes = modes.filter { abs($0.scale - scale) < 0.01 } }
+    private static func dto(_ display: DisplayInfo,
+                            allModes: [DisplayMode],
+                            includeModes: Bool,
+                            options: Options) -> DisplayDTO {
+        var modes = options.includeUnusable
+            ? allModes
+            : allModes.filter { $0.isUsable && !$0.isPrivate }
+        if includeModes {
+            if options.hiDPIOnly { modes = modes.filter(\.isHiDPI) }
+            if let width = options.width { modes = modes.filter { $0.width == width } }
+            if let height = options.height { modes = modes.filter { $0.height == height } }
+            if let scale = options.scale { modes = modes.filter { abs($0.scale - scale) < 0.01 } }
+        }
 
         return DisplayDTO(
             index: display.ordinal,
@@ -988,9 +1009,9 @@ public enum CommandLineRunner {
             rotation: display.rotation,
             current: display.currentMode.map(modeDTO),
             native: display.nativePixelSize?.description,
-            modeCount: all.count,
-            usableModeCount: all.filter(\.isUsable).count,
-            hiDPIModeCount: all.filter(\.isHiDPI).count,
+            modeCount: allModes.count,
+            usableModeCount: allModes.filter(\.isUsable).count,
+            hiDPIModeCount: allModes.filter(\.isHiDPI).count,
             modes: includeModes ? modes.sortedForMenu().map(modeDTO) : nil
         )
     }
