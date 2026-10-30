@@ -81,7 +81,9 @@ public enum CommandLineRunner {
             return 0
         }
         if options.selfTestTiming {
-            return TimingSelfTest.run(displayIndex: options.displayIndex)
+            let timing = TimingSelfTest.run(displayIndex: options.displayIndex)
+            let presets = DisplayPresetSelfTest.run()
+            return (timing == 0 && presets == 0) ? 0 : 1
         }
         if options.listDisplays {
             return listDisplays(options)
