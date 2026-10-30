@@ -552,5 +552,14 @@ enum TimingSelfTest {
         } else {
             checks.check(false, "preset capture succeeds")
         }
+
+        // The public-only path is what the menu uses with hidden modes off; it
+        // must not smuggle private rows in through the back door.
+        let publicOnly = DisplayManager.allModes(for: displays[displayIndex].id,
+                                                 includeUnusable: true,
+                                                 includePrivate: false)
+        checks.check(publicOnly.allSatisfy { !$0.isPrivate },
+                     "public-only enumeration excludes private rows",
+                     "\(publicOnly.filter(\.isPrivate).count) private row(s)")
     }
 }
