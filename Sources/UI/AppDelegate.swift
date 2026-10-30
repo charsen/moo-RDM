@@ -20,6 +20,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         installStatusItem()
         memory.start()
+        // `start()` only registers callbacks. Without this, quitting and
+        // relaunching silently skipped restoring remembered modes until the
+        // display was re-attached.
+        memory.restoreAfterLaunch()
 
         // Keep the menu honest when the world changes underneath us.
         NotificationCenter.default.addObserver(self,
