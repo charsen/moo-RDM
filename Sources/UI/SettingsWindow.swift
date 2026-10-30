@@ -32,11 +32,34 @@ final class SettingsWindowController: NSWindowController {
 
 // MARK: - Tab host
 
-final class SettingsViewController: NSViewController {
+final class SettingsViewController: NSViewController, NSTabViewDelegate {
+
+    private struct Tab {
+        let titleKey: String
+        let item: NSTabViewItem
+        let scroll: NSScrollView
+        let container: NSView
+        var built: Bool
+    }
 
     private var tabView: NSTabView!
+    private var tabs: [Tab] = []
     private var observers: [NSObjectProtocol] = []
-    private var rebuildScheduled = false
+    private var languageRebuildScheduled = false
+
+    // Kept so a preference change updates state in place. Rebuilding all three
+    // tabs measured ~20 ms; this path is a handful of assignments.
+    private var languagePopup: NSPopUpButton?
+    private var showUnusableCheckbox: NSButton?
+    private var hiDPIOnlyCheckbox: NSButton?
+    private var rememberCheckbox: NSButton?
+    private var restoreOnWakeCheckbox: NSButton?
+    private var forgetAllButton: NSButton?
+    private var permanentCheckbox: NSButton?
+    private var optionalModuleCheckbox: NSButton?
+    private var rotationStatusLabel: NSTextField?
+    private var brightnessStatusLabel: NSTextField?
+    private var hiddenHiDPIStatusLabel: NSTextField?
 
     init() {
         super.init(nibName: nil, bundle: nil)
@@ -60,55 +83,36 @@ final class SettingsViewController: NSViewController {
         tabView = NSTabView(frame: view.bounds)
         tabView.autoresizingMask = [.width, .height]
         tabView.tabViewType = .topTabsBezelBorder
+        tabView.delegate = self
         view.addSubview(tabView)
 
-        buildTabs()
+        makeTab(titleKey: "settings.general", identifier: "general")
+        makeTab(titleKey: "settings.advanced", identifier: "advanced")
+        makeTab(titleKey: "settings.about", identifier: "about")
+        tabView.selectTabViewItem(at: 0)
+        installTab(at: 0)
 
-        // The menu and the window edit the same preferences. Without this the
-        // window keeps whatever was true when it was first built — for the whole
-        // life of the process, because the controller is cached.
         let center = NotificationCenter.default
+        // Preferences change often (every mode switch writes rememberedModes):
+        // update the visible controls instead of rebuilding the window.
         observers.append(center.addObserver(forName: Preferences.didChangeNotification,
                                             object: nil, queue: .main) { [weak self] _ in
-            self?.scheduleRebuild()
+            self?.refreshControls()
         })
         observers.append(center.addObserver(forName: .rdmLanguageChanged,
                                             object: nil, queue: .main) { [weak self] _ in
-            self?.scheduleRebuild()
+            self?.scheduleLanguageRebuild()
+        })
+        // Hot-plug and rotation change the status rows, not the toggles.
+        observers.append(center.addObserver(forName: .rdmDisplayConfigurationChanged,
+                                            object: nil, queue: .main) { [weak self] _ in
+            self?.refreshStatusRows()
         })
     }
 
-    private func scheduleRebuild() {
-        // A language change posts both notifications; one rebuild is enough.
-        guard !rebuildScheduled else { return }
-        rebuildScheduled = true
-        // Rebuilding inside a control's own action would tear down the control
-        // that is still running it.
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.rebuildScheduled = false
-            self.buildTabs()
-        }
-    }
+    // MARK: - Tabs
 
-    private func buildTabs() {
-        view.window?.title = L10n.t("settings.title")
-        // A rebuild follows every preference change; without this, toggling
-        // something on the Advanced tab would throw the user back to General.
-        let selected = tabView.selectedTabViewItem.flatMap { tabView.indexOfTabViewItem($0) }
-        for item in tabView.tabViewItems { tabView.removeTabViewItem(item) }
-        addTab(L10n.t("settings.general"), generalTab())
-        addTab(L10n.t("settings.advanced"), advancedTab())
-        addTab(L10n.t("settings.about"), aboutTab())
-        if let selected, selected >= 0, selected < tabView.numberOfTabViewItems {
-            tabView.selectTabViewItem(at: selected)
-        }
-    }
-
-    private func addTab(_ title: String, _ content: NSView) {
-        let item = NSTabViewItem(identifier: title)
-        item.label = title
-
+    private func makeTab(titleKey: String, identifier: String) {
         let scroll = NSScrollView()
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
@@ -118,20 +122,110 @@ final class SettingsViewController: NSViewController {
         let container = NSView()
         container.translatesAutoresizingMaskIntoConstraints = false
         scroll.documentView = container
-
-        content.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(content)
         NSLayoutConstraint.activate([
-            content.topAnchor.constraint(equalTo: container.topAnchor, constant: 16),
-            content.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 18),
-            content.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -18),
-            content.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -16),
             container.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
             container.heightAnchor.constraint(greaterThanOrEqualTo: scroll.contentView.heightAnchor),
         ])
 
+        let item = NSTabViewItem(identifier: identifier)
+        item.label = L10n.t(titleKey)
         item.view = scroll
         tabView.addTabViewItem(item)
+        tabs.append(Tab(titleKey: titleKey, item: item, scroll: scroll,
+                        container: container, built: false))
+    }
+
+    /// Build a tab's content the first time it is selected. The Advanced tab
+    /// includes diagnostics and mode counts, so building it eagerly made the
+    /// General tab pay for work nobody was looking at.
+    private func installTab(at index: Int) {
+        guard index >= 0, index < tabs.count, !tabs[index].built else { return }
+        let tab = tabs[index]
+        for subview in tab.container.subviews { subview.removeFromSuperview() }
+
+        let content: NSView
+        switch index {
+        case 0: content = generalTab()
+        case 1: content = advancedTab()
+        default: content = aboutTab()
+        }
+
+        content.translatesAutoresizingMaskIntoConstraints = false
+        tab.container.addSubview(content)
+        NSLayoutConstraint.activate([
+            content.topAnchor.constraint(equalTo: tab.container.topAnchor, constant: 16),
+            content.leadingAnchor.constraint(equalTo: tab.container.leadingAnchor, constant: 18),
+            content.trailingAnchor.constraint(equalTo: tab.container.trailingAnchor, constant: -18),
+            content.bottomAnchor.constraint(equalTo: tab.container.bottomAnchor, constant: -16),
+        ])
+        tabs[index].built = true
+        refreshControls()
+    }
+
+    func tabView(_ tabView: NSTabView, didSelect item: NSTabViewItem?) {
+        guard let item else { return }
+        installTab(at: tabView.indexOfTabViewItem(item))
+    }
+
+    private func scheduleLanguageRebuild() {
+        guard !languageRebuildScheduled else { return }
+        languageRebuildScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.languageRebuildScheduled = false
+            self.rebuildForLanguage()
+        }
+    }
+
+    /// Language is the one change that has to rebuild strings; everything else
+    /// is handled by `refreshControls`.
+    private func rebuildForLanguage() {
+        guard isViewLoaded else { return }
+        let selected = tabView.selectedTabViewItem
+            .flatMap { tabView.indexOfTabViewItem($0) } ?? 0
+        view.window?.title = L10n.t("settings.title")
+        clearControlReferences()
+
+        for index in tabs.indices {
+            tabs[index].item.label = L10n.t(tabs[index].titleKey)
+            for subview in tabs[index].container.subviews { subview.removeFromSuperview() }
+            tabs[index].built = false
+        }
+
+        installTab(at: selected)
+        tabView.selectTabViewItem(at: selected)
+    }
+
+    private func clearControlReferences() {
+        languagePopup = nil
+        showUnusableCheckbox = nil
+        hiDPIOnlyCheckbox = nil
+        rememberCheckbox = nil
+        restoreOnWakeCheckbox = nil
+        forgetAllButton = nil
+        permanentCheckbox = nil
+        optionalModuleCheckbox = nil
+        rotationStatusLabel = nil
+        brightnessStatusLabel = nil
+        hiddenHiDPIStatusLabel = nil
+    }
+
+    private func refreshControls() {
+        languagePopup?.selectItem(at: AppLanguage.allCases.firstIndex(of: Preferences.shared.language) ?? 0)
+        showUnusableCheckbox?.state = Preferences.shared.showUnusableModes ? .on : .off
+        hiDPIOnlyCheckbox?.state = Preferences.shared.hiDPIOnly ? .on : .off
+        rememberCheckbox?.state = Preferences.shared.rememberPerDisplay ? .on : .off
+        restoreOnWakeCheckbox?.state = Preferences.shared.restoreOnWake ? .on : .off
+        forgetAllButton?.isEnabled = !Preferences.shared.rememberedModes.isEmpty
+        permanentCheckbox?.state = Preferences.shared.permanentChanges ? .on : .off
+        optionalModuleCheckbox?.state = Preferences.shared.enableOptionalModule ? .on : .off
+        refreshStatusRows()
+    }
+
+    private func refreshStatusRows() {
+        rotationStatusLabel?.stringValue = rotationStatus()
+        brightnessStatusLabel?.stringValue = brightnessStatus()
+        hiddenHiDPIStatusLabel?.stringValue = hiddenHiDPIStatus()
     }
 
     // MARK: - General
@@ -141,41 +235,50 @@ final class SettingsViewController: NSViewController {
 
         stack.addArrangedSubview(sectionLabel(L10n.t("settings.language")))
 
-        let languagePopup = NSPopUpButton(frame: .zero, pullsDown: false)
+        let popup = NSPopUpButton(frame: .zero, pullsDown: false)
         for language in AppLanguage.allCases {
-            languagePopup.addItem(withTitle: language.displayName)
-            languagePopup.lastItem?.representedObject = language.rawValue
+            popup.addItem(withTitle: language.displayName)
+            popup.lastItem?.representedObject = language.rawValue
         }
-        languagePopup.selectItem(at: AppLanguage.allCases.firstIndex(of: Preferences.shared.language) ?? 0)
-        languagePopup.target = self
-        languagePopup.action = #selector(languageChanged(_:))
-        languagePopup.widthAnchor.constraint(equalToConstant: 220).isActive = true
-        stack.addArrangedSubview(languagePopup)
+        popup.selectItem(at: AppLanguage.allCases.firstIndex(of: Preferences.shared.language) ?? 0)
+        popup.target = self
+        popup.action = #selector(languageChanged(_:))
+        popup.widthAnchor.constraint(equalToConstant: 220).isActive = true
+        languagePopup = popup
+        stack.addArrangedSubview(popup)
 
         stack.addArrangedSubview(divider())
 
         stack.addArrangedSubview(sectionLabel(L10n.t("menu.resolution")))
-        stack.addArrangedSubview(checkbox(L10n.t("settings.showUnusable"),
-                                          on: Preferences.shared.showUnusableModes,
-                                          action: #selector(toggleShowUnusable(_:))))
+        let showUnusable = checkbox(L10n.t("settings.showUnusable"),
+                                    on: Preferences.shared.showUnusableModes,
+                                    action: #selector(toggleShowUnusable(_:)))
+        showUnusableCheckbox = showUnusable
+        stack.addArrangedSubview(showUnusable)
         addFullWidth(hint(L10n.t("settings.showUnusable.hint")), to: stack)
 
-        stack.addArrangedSubview(checkbox(L10n.t("settings.hiDPIOnly"),
-                                          on: Preferences.shared.hiDPIOnly,
-                                          action: #selector(toggleHiDPIOnly(_:))))
+        let hiDPIOnly = checkbox(L10n.t("settings.hiDPIOnly"),
+                                 on: Preferences.shared.hiDPIOnly,
+                                 action: #selector(toggleHiDPIOnly(_:)))
+        hiDPIOnlyCheckbox = hiDPIOnly
+        stack.addArrangedSubview(hiDPIOnly)
         addFullWidth(hint(L10n.t("settings.hiDPIOnly.hint")), to: stack)
 
         stack.addArrangedSubview(divider())
 
         stack.addArrangedSubview(sectionLabel(L10n.t("settings.section.memory")))
-        stack.addArrangedSubview(checkbox(L10n.t("settings.rememberPerDisplay"),
-                                          on: Preferences.shared.rememberPerDisplay,
-                                          action: #selector(toggleRemember(_:))))
+        let remember = checkbox(L10n.t("settings.rememberPerDisplay"),
+                                on: Preferences.shared.rememberPerDisplay,
+                                action: #selector(toggleRemember(_:)))
+        rememberCheckbox = remember
+        stack.addArrangedSubview(remember)
         addFullWidth(hint(L10n.t("settings.rememberPerDisplay.hint")), to: stack)
 
-        stack.addArrangedSubview(checkbox(L10n.t("settings.restoreOnWake"),
-                                          on: Preferences.shared.restoreOnWake,
-                                          action: #selector(toggleRestoreOnWake(_:))))
+        let restore = checkbox(L10n.t("settings.restoreOnWake"),
+                               on: Preferences.shared.restoreOnWake,
+                               action: #selector(toggleRestoreOnWake(_:)))
+        restoreOnWakeCheckbox = restore
+        stack.addArrangedSubview(restore)
         addFullWidth(hint(L10n.t("settings.restoreOnWake.hint")), to: stack)
 
         let forgetAll = NSButton(title: L10n.t("settings.forgetAll"),
@@ -183,6 +286,7 @@ final class SettingsViewController: NSViewController {
                                  action: #selector(forgetAllRemembered(_:)))
         forgetAll.bezelStyle = .rounded
         forgetAll.isEnabled = !Preferences.shared.rememberedModes.isEmpty
+        forgetAllButton = forgetAll
         stack.addArrangedSubview(forgetAll)
         addFullWidth(hint(L10n.t("settings.forgetAll.hint")), to: stack)
 
@@ -195,22 +299,34 @@ final class SettingsViewController: NSViewController {
         let stack = verticalStack()
 
         stack.addArrangedSubview(sectionLabel(L10n.t("settings.section.changes")))
-        stack.addArrangedSubview(checkbox(L10n.t("settings.permanent"),
-                                          on: Preferences.shared.permanentChanges,
-                                          action: #selector(togglePermanent(_:))))
+        let permanent = checkbox(L10n.t("settings.permanent"),
+                                 on: Preferences.shared.permanentChanges,
+                                 action: #selector(togglePermanent(_:)))
+        permanentCheckbox = permanent
+        stack.addArrangedSubview(permanent)
         addFullWidth(hint(L10n.t("settings.permanent.hint")), to: stack)
 
         stack.addArrangedSubview(divider())
 
         stack.addArrangedSubview(sectionLabel(L10n.t("settings.section.private")))
-        stack.addArrangedSubview(checkbox(L10n.t("settings.optionalModule"),
-                                          on: Preferences.shared.enableOptionalModule,
-                                          action: #selector(toggleOptionalModule(_:))))
+        let optional = checkbox(L10n.t("settings.optionalModule"),
+                                on: Preferences.shared.enableOptionalModule,
+                                action: #selector(toggleOptionalModule(_:)))
+        optionalModuleCheckbox = optional
+        stack.addArrangedSubview(optional)
         addFullWidth(hint(L10n.t("settings.optionalModule.hint")), to: stack)
 
-        stack.addArrangedSubview(statusRow(L10n.t("menu.rotation"), rotationStatus()))
-        stack.addArrangedSubview(statusRow(L10n.t("menu.brightness"), brightnessStatus()))
-        stack.addArrangedSubview(statusRow(L10n.t("settings.hiddenHiDPI"), hiddenHiDPIStatus()))
+        let rotation = statusRow(L10n.t("menu.rotation"), rotationStatus())
+        rotationStatusLabel = rotation.detail
+        stack.addArrangedSubview(rotation.view)
+
+        let brightness = statusRow(L10n.t("menu.brightness"), brightnessStatus())
+        brightnessStatusLabel = brightness.detail
+        stack.addArrangedSubview(brightness.view)
+
+        let hidden = statusRow(L10n.t("settings.hiddenHiDPI"), hiddenHiDPIStatus())
+        hiddenHiDPIStatusLabel = hidden.detail
+        stack.addArrangedSubview(hidden.view)
 
         stack.addArrangedSubview(divider())
 
@@ -220,11 +336,12 @@ final class SettingsViewController: NSViewController {
         copyButton.bezelStyle = .rounded
         stack.addArrangedSubview(copyButton)
 
-        let diagnostics = NSTextField(wrappingLabelWithString: AppInfo.diagnostics())
-        diagnostics.font = .monospacedSystemFont(ofSize: 9, weight: .regular)
-        diagnostics.textColor = .secondaryLabelColor
-        diagnostics.isSelectable = true
-        addFullWidth(diagnostics, to: stack)
+        // The diagnostics block is long and expensive to lay out; generate it
+        // when the button is pressed instead of on every Advanced-tab visit.
+        let diagnosticsHint = NSTextField(wrappingLabelWithString: L10n.t("settings.diagnostics.hint"))
+        diagnosticsHint.font = .systemFont(ofSize: 10)
+        diagnosticsHint.textColor = .tertiaryLabelColor
+        addFullWidth(diagnosticsHint, to: stack)
 
         return stack
     }
@@ -402,7 +519,7 @@ final class SettingsViewController: NSViewController {
         return box
     }
 
-    private func statusRow(_ title: String, _ detail: String) -> NSView {
+    private func statusRow(_ title: String, _ detail: String) -> (view: NSView, detail: NSTextField) {
         let titleLabel = NSTextField(labelWithString: title)
         titleLabel.font = .systemFont(ofSize: 11)
         let detailLabel = NSTextField(labelWithString: detail)
@@ -412,6 +529,6 @@ final class SettingsViewController: NSViewController {
         let row = NSStackView(views: [titleLabel, NSView(), detailLabel])
         row.orientation = .horizontal
         row.alignment = .centerY
-        return row
+        return (row, detailLabel)
     }
 }
