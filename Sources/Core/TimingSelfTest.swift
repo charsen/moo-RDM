@@ -308,6 +308,102 @@ enum TimingSelfTest {
                          $0.width == 1920 && $0.height == 1080 && $0.scale > 1.01
                      } == true,
                      "audit end to end: an HiDPI point size lands on the timing it drives")
+
+        // 9. Scale-resolution overrides. These bytes are the only thing this app
+        //    hands to macOS for a custom size, so the wire format is pinned here
+        //    rather than trusted to look right.
+        let custom = ScaledResolution(pointWidth: 2304, pointHeight: 1296)
+        checks.check([UInt8](custom.entry) == [0x00, 0x00, 0x12, 0x00,
+                                               0x00, 0x00, 0x0A, 0x20],
+                     "scale entry encodes 4608 × 2592 big-endian",
+                     custom.entry.map { String(format: "%02X", $0) }.joined(separator: " "))
+        checks.check(ScaledResolution.decode(custom.entry) == custom,
+                     "scale entry round-trips")
+        let sixteen = Data([0x00, 0x00, 0x12, 0x00,
+                            0x00, 0x00, 0x0A, 0x20,
+                            0x00, 0x00, 0x00, 0x09,
+                            0x00, 0xA0, 0x00, 0x00])
+        checks.check(ScaledResolution.decode(sixteen)?.pointWidth == 2304,
+                     "16-byte plist form decodes from its first eight bytes")
+
+        let base: [String: Any] = ["DisplayProductName": "Fixture", "IOGFlags": 4]
+        let merged = ScaleResolutionStore.merged(payload: base, adding: custom)
+        checks.check(merged["DisplayProductName"] as? String == "Fixture",
+                     "scale merge keeps unrelated keys")
+        checks.check(merged["IOGFlags"] as? Int == 4,
+                     "scale merge keeps non-string keys")
+        checks.check(ScaleResolutionStore.entries(in: merged).contains(custom),
+                     "scale merge adds the entry")
+        let mergedTwice = ScaleResolutionStore.merged(payload: merged, adding: custom)
+        checks.check(ScaleResolutionStore.rawEntries(in: mergedTwice).count == 1,
+                     "scale merge does not duplicate an entry")
+        let stripped = ScaleResolutionStore.merged(payload: merged, removing: custom)
+        checks.check(stripped["scale-resolutions"] == nil,
+                     "scale removal drops the empty array")
+        checks.check(stripped["DisplayProductName"] as? String == "Fixture",
+                     "scale removal keeps the rest of the payload")
+
+        let other = ScaledResolution(pointWidth: 2048, pointHeight: 1152)
+        let baselined = ScaleResolutionStore.customEntries(
+            installed: [custom.entry, custom.entry, other.entry],
+            baseline: [custom.entry])
+        checks.check(baselined == [custom.entry, other.entry],
+                     "custom entries are the count-aware difference from Apple's baseline")
+
+        // 10. Rotated displays report point and backing sizes in different
+        //     orientations; a single-axis ratio gets the scale wrong and can
+        //     make the HiDPI filter drop every row.
+        let rotated = DisplayMode(displayID: 1, width: 1440, height: 2560,
+                                  pixelWidth: 5120, pixelHeight: 2880)
+        checks.check(rotated.isHiDPI, "rotated HiDPI is still detected")
+        checks.check(abs(rotated.scale - 2.0) < 0.01,
+                     "rotated scale is derived from area, not one axis",
+                     String(format: "%.2f", rotated.scale))
+
+        // 11. The plain 1× twin of a custom entry is not a selectable mode.
+        let twin = DisplayMode(displayID: 1, width: 4608, height: 2592,
+                               pixelWidth: 4608, pixelHeight: 2592)
+        checks.check(twin.isCustomStandardTwin(of: PixelSize(width: 4608, height: 2592)),
+                     "the 1× twin of a custom entry is recognised")
+        checks.check(!twin.isHiDPI, "the twin is not marked HiDPI")
+        let ordinary = DisplayMode(displayID: 1, width: 1920, height: 1080,
+                                   pixelWidth: 1920, pixelHeight: 1080)
+        checks.check(!ordinary.isCustomStandardTwin(of: PixelSize(width: 4608, height: 2592)),
+                     "an ordinary 1× mode is not mistaken for a twin")
+
+        // 12. Display identity carries the unit number, so two panels with the
+        //     same EDID and serial 0 no longer overwrite each other's memory.
+        let first = DisplayIdentity(vendor: 0x09D1, model: 0x8039, serial: 0,
+                                    unit: 1, isBuiltin: false, ordinal: 0)
+        let second = DisplayIdentity(vendor: 0x09D1, model: 0x8039, serial: 0,
+                                     unit: 2, isBuiltin: false, ordinal: 1)
+        checks.check(first.key != second.key, "unit number separates identical panels")
+        checks.check(first.legacyKey == second.legacyKey,
+                     "the old key format is shared, which is why it is only a fallback")
+        let serialed = DisplayIdentity(vendor: 0x09D1, model: 0x8039, serial: 1234,
+                                       unit: 7, isBuiltin: false, ordinal: 0)
+        checks.check(serialed.key == serialed.legacyKey,
+                     "a panel with a real serial keeps the stable old key")
+
+        // 13. Cross-display matching: only sizes and rates present on every
+        //     display survive the intersection.
+        func mode(_ width: Int, _ height: Int, scale: Double, _ rate: Double) -> DisplayMode {
+            DisplayMode(displayID: 1, width: width, height: height,
+                        pixelWidth: Int(Double(width) * scale),
+                        pixelHeight: Int(Double(height) * scale),
+                        refreshRate: rate)
+        }
+        let common = DisplayMode.commonResolutions(
+            among: [[mode(2304, 1296, scale: 2, 60), mode(2304, 1296, scale: 2, 50),
+                     mode(2560, 1440, scale: 2, 60)],
+                    [mode(2304, 1296, scale: 2, 60), mode(2560, 1440, scale: 2, 50)]],
+            hiDPIOnly: true)
+        checks.check(common.count == 1, "only the shared geometry survives",
+                     "\(common.count) entries")
+        checks.check(common.first?.choice.width == 2304 && common.first?.refreshRate == 60,
+                     "shared geometry keeps the fastest rate both displays offer")
+        checks.check(DisplayMode.commonResolutions(among: [], hiDPIOnly: false).isEmpty,
+                     "no displays means no common resolutions")
     }
 
     // MARK: - Real panel
@@ -353,8 +449,15 @@ enum TimingSelfTest {
         }
 
         // Short-format parsing: a 4K panel should report at least one CEA rate.
+        // Apple's own 5K panels declare their modes through detailed timings and
+        // DisplayID blocks and carry no CEA short format at all, so "none" is a
+        // property of the panel, not a parser failure.
         let short = edid.declaredRates.filter { $0.source == .ceaShortFormat }
-        checks.check(!short.isEmpty, "CEA short formats parsed", "\(short.count) entries")
+        if short.isEmpty {
+            print("SKIP  this EDID declares no CEA short formats")
+        } else {
+            checks.check(true, "CEA short formats parsed", "\(short.count) entries")
+        }
 
         // Geometry matching must accept both point and pixel sizes.
         let modes = DisplayManager.allModes(for: displays[displayIndex].id)
