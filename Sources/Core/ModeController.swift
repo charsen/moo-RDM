@@ -96,6 +96,10 @@ public enum ModeController {
     /// all. Mirroring rides in the same transaction, because setting a slave's
     /// mode outside the mirror set it is about to join is what produces the
     /// "mirroring unmirrored itself" surprise.
+    ///
+    /// Order matters: a display leaving a mirror set is detached first, then
+    /// modes are assigned, then the new mirror links are made. Applying a mode
+    /// to a still-mirrored display is the case that fails on some GPUs.
     @discardableResult
     public static func apply(_ assignments: [Assignment],
                              mirroring mirror: [CGDirectDisplayID: CGDirectDisplayID] = [:],
@@ -115,6 +119,14 @@ public enum ModeController {
             return .failure(.beginFailed(begin))
         }
 
+        for displayID in unmirror {
+            let result = CGConfigureDisplayMirrorOfDisplay(config, displayID, kCGNullDirectDisplay)
+            guard result == .success else {
+                CGCancelDisplayConfiguration(config)
+                return .failure(.configureFailed(result))
+            }
+        }
+
         for assignment in assignments {
             guard let cgMode = assignment.mode.cgMode else {
                 CGCancelDisplayConfiguration(config)
@@ -132,14 +144,6 @@ public enum ModeController {
 
         for (slave, master) in mirror {
             let result = CGConfigureDisplayMirrorOfDisplay(config, slave, master)
-            guard result == .success else {
-                CGCancelDisplayConfiguration(config)
-                return .failure(.configureFailed(result))
-            }
-        }
-
-        for displayID in unmirror {
-            let result = CGConfigureDisplayMirrorOfDisplay(config, displayID, kCGNullDirectDisplay)
             guard result == .success else {
                 CGCancelDisplayConfiguration(config)
                 return .failure(.configureFailed(result))
