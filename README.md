@@ -88,10 +88,12 @@ CGDisplayCopyAllDisplayModes(display, [
 | **每屏模式记忆** | 记住每块屏幕用的模式，重插后自动恢复（现在连旋转一起恢复，启动时也会兑现；记错了可逐屏忘掉或清空全部；命令行切换同样写入记忆；镜像组内的屏不单独恢复；恢复有折衷时菜单里显示上次结果） |
 | **热插拔监听** | `CGDisplayRegisterReconfigurationCallback`，显示器插拔时菜单自动更新 |
 | **旋转** | 0° / 90° / 180° / 270°，能力探测驱动 |
-| **亮度** | 仅在支持的显示器上出现 |
-| **自定义缩放分辨率** | 菜单里给面板补 macOS 没列出的尺寸，写入 `/Library` override，重插后生效 |
+| **亮度** | 支持的显示器上显示连续滑杆 |
+| **登录时启动** | 设置里开启，由 `SMAppService` 管理，需要时提示到系统设置授权 |
+| **全局快捷键** | ⌘, / ⌘Q 在状态菜单关闭时也生效（最小应用主菜单） |
+| **自定义缩放分辨率** | 菜单与 CLI 都能给面板补 macOS 没列出的尺寸，写入 `/Library` override，重插后生效 |
 | **所有显示器** | 同分辨率、与主屏一致、镜像/停止镜像，一次事务提交 |
-| **显示配置预设** | 保存/一键应用整套分辨率、旋转、镜像与亮度；缺失显示器点名跳过 |
+| **显示配置预设** | 保存/一键应用整套分辨率、旋转、镜像、排列位置与亮度；缺失显示器点名跳过 |
 
 ### 隐藏 HiDPI 模式
 
@@ -330,7 +332,9 @@ rdm-arm --refresh-audit            # 某个刷新率为什么拿不到，逐分�
 rdm-arm --refresh-audit -r 75      # 指定目标刷新率
 rdm-arm --refresh-audit -r 75 --json | jq .verdict   # 同一份结论，机器可读
 rdm-arm --custom-timing 3840x2160@65 --write   # 合成 4K@65 并试写，20 秒自动回滚
-rdm-arm --selftest-timing          # EDID/时序纯逻辑自检，不碰系统，无显示器也能跑
+rdm-arm --custom-resolution 2304x1296 --write  # 添加缩放分辨率，重插后生效
+rdm-arm --remove-resolution 2304x1296 --write  # 移除自定义尺寸
+rdm-arm --selftest-timing          # EDID/时序、预设与排列自检，不碰系统，无显示器也能跑
 rdm-arm --selftest                 # GUI 自检：菜单栏图标位置 + 菜单结构
 rdm-arm --selftest --roundtrip     # 自检并真实跑一遍「切换 → 还原」
 ```
@@ -340,6 +344,8 @@ rdm-arm --selftest --roundtrip     # 自检并真实跑一遍「切换 → 还�
 命令行切换时如果指定的刷新率在该尺寸上不存在，不会静默替换：会打印实际使用的刷新率和该尺寸可用的档位。切换成功后也会更新按屏记忆，重新插拔或下次启动不会回退到旧模式。
 
 5K 面板还有一条单独的诊断：合成时序需要约 862 MHz，而 EDID 描述符的像素时钟字段上限是 655.35 MHz，`--custom-timing` 会直接说明「卡在描述符，不是显示器」，并指向菜单里的自定义缩放分辨率。
+
+`--custom-resolution` / `--remove-resolution` 与菜单共用同一个 `scale-resolutions` override：不加 `--write` 只打印将要做什么，加 `--write` 才写入并提示重新插拔或重启。它不会当场切换模式，所以没有 `--custom-timing` 那种自动回滚窗口。
 
 `--selftest` 值得单独说一句：菜单栏图标是否真的显示出来，**无法从进程外部验证**——`CGWindowListCopyWindowInfo` 不枚举菜单栏项，截屏又需要录屏权限。所以自检从进程内部报告窗口服务器实际把图标放在了哪里，是唯一可靠的办法。加上 `--roundtrip` 后会真的切换一次分辨率再还原，用来验证「切换 → 还原」这条链路确实通。
 
