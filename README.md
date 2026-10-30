@@ -569,6 +569,8 @@ Tools/
 - 多屏镜像（mirroring）状态下部分模式不可用，这是 macOS 本身的限制。
 - **自定义时序在 Apple 芯片上只算不写**。真机验证（M4 Max / macOS 27.0.1 / BenQ PD2705U）的结论是：override 文件写得完全正确，系统却不读它——实时 EDID 仍是面板原厂值，拔插线缆、显示器休眠、整机睡眠三种重载触发都试过，模式表 290 条一动不动。所以 `--write` 在 Apple 芯片上直接拒绝（退出码 3），不再让你输密码再告诉你没变化；菜单和 `--capabilities` 也会如实标注。Intel 机器上这条路线保持原样可用。将来系统若修复，设 `RDM_ALLOW_EDID_OVERRIDE=1` 可绕过闸门复验。
 - **链路预算依赖私有类名**（`AppleATCDPAltModePort` 等）。这些名字随系统变动时，预算会变成"未知"，`--custom-timing` 仍能算出时序，但不会再声称知道天花板——宁可少说，不可乱说。
+- **主屏指定不随预设恢复**：预设记录分辨率、旋转、镜像、排列位置与亮度；CoreGraphics 只有 `CGConfigureDisplayOrigin`（排列），没有设置主屏的公开 API，macOS 27 上也没有探测到可用的私有符号。
+- **未内置虚拟屏**：Apple 芯片上另一条补尺寸路线是 `CGVirtualDisplay` 加硬件镜像；它需要虚拟屏生命周期、镜像拓扑与清理策略，暂不纳入本工具。
 
 ---
 

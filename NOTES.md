@@ -41,3 +41,11 @@
 - 主屏指定没有公开的 CoreGraphics API，预设仍不记录。
 - 记忆恢复的折衷（刷新率替换、模式缺失、应用失败）记录在
   `ModeMemoryController.lastRestoreNotes`，菜单打开对应显示时显示一行。
+
+## 2026-10-30 — 主屏指定与虚拟屏暂不实现
+
+- macOS 27 的 CoreGraphics 只有 `CGConfigureDisplayOrigin`（排列位置），没有设置主屏的
+  公开 API；探测 `SLSSetMainDisplay`、`CGSSetMainDisplay`、`CoreDisplay_Display_SetMain`
+  等符号均不存在。预设因此记录排列位置但不记录主屏。
+- 虚拟屏（`CGVirtualDisplay` + 硬件镜像）可以在 Apple 芯片上补尺寸，但需要虚拟屏生命周期、
+  镜像拓扑与清理逻辑，暂不纳入；已在 TODOS 记录。
