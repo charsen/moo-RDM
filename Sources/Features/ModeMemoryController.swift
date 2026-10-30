@@ -118,6 +118,11 @@ final class ModeMemoryController {
         // previous rotation. A failed rotation is not fatal — the mode is still
         // applied at the current orientation.
         for display in displays {
+            // A display inside a mirror set follows its master's timing. Applying
+            // a per-display remembered mode here would either fail or silently
+            // break the mirror; presets are where mirror topology is restored.
+            guard !display.isMirrored else { continue }
+
             guard let target = remembered[display.identity.key]
                     ?? remembered[display.identity.legacyKey]
             else { continue }
