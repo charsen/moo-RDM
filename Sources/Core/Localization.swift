@@ -105,6 +105,7 @@ public enum L10n {
         "menu.preset.none": "No presets yet",
         "menu.preset.partial": "Preset applied with issues",
         "menu.preset.missing": "Not connected: %@",
+        "menu.preset.summary.mirrors": "%d mirror link(s)",
 
         "menu.capabilities": "EDID and refresh limits",
         "menu.capabilities.link": "Budget: %@",
@@ -339,6 +340,7 @@ public enum L10n {
         "menu.preset.none": "还没有预设",
         "menu.preset.partial": "预设已应用，但有未完成项",
         "menu.preset.missing": "未连接：%@",
+        "menu.preset.summary.mirrors": "%d 组镜像",
 
         "menu.capabilities": "EDID 与刷新上限",
         "menu.capabilities.link": "带宽：%@",

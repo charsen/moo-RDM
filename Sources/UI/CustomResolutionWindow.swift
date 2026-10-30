@@ -264,7 +264,7 @@ final class CustomResolutionWindowController: NSWindowController, NSWindowDelega
         }
     }
 
-    private func validate() {
+    private func validate(includingOffered: Bool = false) {
         guard let edid else {
             statusLabel.stringValue = L10n.t("error.timingNoEDID")
             addButton.isEnabled = false
@@ -286,7 +286,7 @@ final class CustomResolutionWindowController: NSWindowController, NSWindowDelega
 
         switch ScaleResolutionStore.validate(pointWidth: width, pointHeight: height,
                                              on: display, edid: edid,
-                                             checkOffered: false) {
+                                             checkOffered: includingOffered) {
         case .success:
             statusLabel.stringValue = ""
             addButton.isEnabled = !isBusy
@@ -313,6 +313,12 @@ final class CustomResolutionWindowController: NSWindowController, NSWindowDelega
 
     func controlTextDidChange(_ notification: Notification) {
         validate()
+    }
+
+    func controlTextDidEndEditing(_ notification: Notification) {
+        // The offered-mode check enumerates every mode; run it when the field is
+        // committed instead of on every keystroke.
+        validate(includingOffered: true)
     }
 
     @objc private func applyPreset(_ sender: NSPopUpButton) {

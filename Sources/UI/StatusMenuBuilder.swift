@@ -503,6 +503,7 @@ enum StatusMenuBuilder {
                 let item = action(preset.name,
                                   #selector(MenuActionRouter.applyPreset(_:)), router)
                 item.representedObject = PresetBox(preset)
+                item.toolTip = presetSummary(preset)
                 submenu.addItem(item)
             }
 
@@ -522,6 +523,14 @@ enum StatusMenuBuilder {
 
         parent.submenu = submenu
         return parent
+    }
+
+    private static func presetSummary(_ preset: DisplayPreset) -> String {
+        var parts = preset.displays.values.map(\.name).sorted()
+        if !preset.mirrors.isEmpty {
+            parts.append(L10n.t("menu.preset.summary.mirrors", Int32(preset.mirrors.count)))
+        }
+        return parts.joined(separator: " · ")
     }
 
     // MARK: - Hardware limits

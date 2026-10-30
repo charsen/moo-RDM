@@ -182,6 +182,7 @@ final class SettingsViewController: NSViewController {
                                  target: self,
                                  action: #selector(forgetAllRemembered(_:)))
         forgetAll.bezelStyle = .rounded
+        forgetAll.isEnabled = !Preferences.shared.rememberedModes.isEmpty
         stack.addArrangedSubview(forgetAll)
         addFullWidth(hint(L10n.t("settings.forgetAll.hint")), to: stack)
 
