@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let memory = ModeMemoryController()
     private var router: MenuActionRouter!
     private var settingsWindow: SettingsWindowController?
+    private var isMenuOpen = false
 
     // MARK: - Lifecycle
 
@@ -14,7 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         L10n.language = Preferences.shared.language
 
         router = MenuActionRouter(memory: memory)
-        router.onMenuNeedsRebuild = { [weak self] in self?.rebuildMenu() }
+        router.onMenuNeedsRebuild = { [weak self] in self?.requestRebuild() }
         router.onShowPreferences = { [weak self] in self?.showSettings() }
         router.onShowAbout = { [weak self] in self?.showAbout() }
 
@@ -35,7 +36,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                                name: Preferences.didChangeNotification,
                                                object: nil)
 
-        rebuildMenu()
+        // The menu is built on first open; building it now would be work for a
+        // window nobody has asked to see yet.
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -61,7 +63,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func menuWillOpen(_ menu: NSMenu) {
+        isMenuOpen = true
+        // Always rebuild here: this is the one place where freshness is cheap and
+        // required. Everything else only asks for a rebuild while the menu is
+        // actually open.
         rebuildMenu()
+    }
+
+    func menuDidClose(_ menu: NSMenu) {
+        isMenuOpen = false
     }
 
     private func rebuildMenu() {
@@ -69,8 +79,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         StatusMenuBuilder.build(into: menu, router: router)
     }
 
-    @objc private func stateChanged() {
+    /// Rebuild only if someone can see the result. Mode changes, hot-plug events
+    /// and preference writes used to rebuild the whole menu while it was closed;
+    /// the next open rebuilds anyway.
+    private func requestRebuild() {
+        guard isMenuOpen else { return }
         rebuildMenu()
+    }
+
+    @objc private func stateChanged() {
+        requestRebuild()
     }
 
     // MARK: - Windows

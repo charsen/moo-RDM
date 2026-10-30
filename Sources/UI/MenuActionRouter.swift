@@ -218,7 +218,7 @@ final class MenuActionRouter: NSObject {
     }
 
     @objc func stopMirroring(_ sender: NSMenuItem) {
-        let mirrored = DisplayManager.allDisplays().filter(\.isMirrored)
+        let mirrored = DisplayManager.allInfos().filter(\.isMirrored)
         guard !mirrored.isEmpty else { return }
 
         switch ModeController.apply([], unmirroring: mirrored.map(\.id),

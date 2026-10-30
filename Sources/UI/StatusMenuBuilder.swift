@@ -13,6 +13,8 @@ enum StatusMenuBuilder {
 
         let snapshots = DisplayManager.snapshots(includeUnusable: Preferences.shared.showUnusableModes)
         let hiddenTwins = hiddenStandardSizes(for: snapshots)
+        // Decode once per menu build instead of once per display.
+        let rememberedModes = Preferences.shared.rememberedModes
 
         if snapshots.isEmpty {
             menu.addItem(disabled(L10n.t("menu.noDisplays")))
@@ -26,6 +28,7 @@ enum StatusMenuBuilder {
             for snapshot in snapshots {
                 menu.addItem(displayItem(snapshot,
                                          hiddenTwins: hiddenTwins[snapshot.display.id] ?? [],
+                                         rememberedModes: rememberedModes,
                                          among: displays,
                                          router: router))
             }
@@ -73,6 +76,7 @@ enum StatusMenuBuilder {
 
     private static func displayItem(_ snapshot: DisplaySnapshot,
                                     hiddenTwins: Set<PixelSize>,
+                                    rememberedModes: [String: RememberedMode],
                                     among displays: [DisplayInfo],
                                     router: MenuActionRouter) -> NSMenuItem {
         let display = snapshot.display
@@ -87,9 +91,11 @@ enum StatusMenuBuilder {
         }
         submenu.addItem(.separator())
 
-        submenu.addItem(resolutionsItem(for: snapshot, hiddenTwins: hiddenTwins, router: router))
-        if let refreshItem = refreshRateItem(for: snapshot, hiddenTwins: hiddenTwins, router: router) {
-            submenu.addItem(refreshItem)
+        submenu.addItem(lazyModesItem(.resolutions, snapshot: snapshot,
+                                      hiddenTwins: hiddenTwins, router: router))
+        if snapshot.display.currentMode != nil {
+            submenu.addItem(lazyModesItem(.refreshRates, snapshot: snapshot,
+                                          hiddenTwins: hiddenTwins, router: router))
         }
         submenu.addItem(capabilitiesItem(for: display))
         submenu.addItem(.separator())
@@ -100,7 +106,8 @@ enum StatusMenuBuilder {
         reset.representedObject = box
         submenu.addItem(reset)
 
-        if router.memory.rememberedMode(for: display) != nil {
+        if rememberedModes[display.identity.key] != nil
+            || rememberedModes[display.identity.legacyKey] != nil {
             let forget = action(L10n.t("menu.forgetRemembered"),
                                 #selector(MenuActionRouter.forgetRememberedMode(_:)), router)
             forget.representedObject = DisplayBox(displayID: display.id)
@@ -164,13 +171,33 @@ enum StatusMenuBuilder {
         return result
     }
 
-    private static func resolutionsItem(for snapshot: DisplaySnapshot,
-                                        hiddenTwins: Set<PixelSize>,
-                                        router: MenuActionRouter) -> NSMenuItem {
-        let display = snapshot.display
-        let parent = NSMenuItem(title: L10n.t("menu.resolution"), action: nil, keyEquivalent: "")
+    /// A submenu whose contents are built only when it is opened.
+    ///
+    /// Building every mode row for every display on every top-level open was the
+    /// bulk of the menu cost (hundreds of `NSMenuItem`s for a 4K panel), even
+    /// when the user only wanted Preferences or another display.
+    private static func lazyModesItem(_ kind: LazyModesMenu.Kind,
+                                      snapshot: DisplaySnapshot,
+                                      hiddenTwins: Set<PixelSize>,
+                                      router: MenuActionRouter) -> NSMenuItem {
+        let parent = NSMenuItem(title: kind.title, action: nil, keyEquivalent: "")
         let submenu = NSMenu()
+        let lazy = LazyModesMenu(kind: kind, snapshot: snapshot,
+                                 hiddenTwins: hiddenTwins, router: router)
+        submenu.delegate = lazy
+        objc_setAssociatedObject(submenu, &lazyModesDelegateKey, lazy,
+                                 .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        parent.submenu = submenu
+        return parent
+    }
 
+    private static var lazyModesDelegateKey: UInt8 = 0
+
+    fileprivate static func populateResolutions(into submenu: NSMenu,
+                                                for snapshot: DisplaySnapshot,
+                                                hiddenTwins: Set<PixelSize>,
+                                                router: MenuActionRouter) {
+        let display = snapshot.display
         let current = display.currentMode
         let isFiltering = Preferences.shared.hiDPIOnly
         let all = menuModes(snapshot, hiddenTwins: hiddenTwins)
@@ -245,9 +272,6 @@ enum StatusMenuBuilder {
             header.submenu = child
             submenu.addItem(header)
         }
-
-        parent.submenu = submenu
-        return parent
     }
 
     /// One resolution row, including where a click should land.
@@ -284,10 +308,11 @@ enum StatusMenuBuilder {
     /// makes a working display look like a broken feature — a lone ticked entry
     /// says "this panel only does 60 Hz", which is the honest answer, rather than
     /// saying nothing at all.
-    private static func refreshRateItem(for snapshot: DisplaySnapshot,
-                                        hiddenTwins: Set<PixelSize>,
-                                        router: MenuActionRouter) -> NSMenuItem? {
-        guard let current = snapshot.display.currentMode else { return nil }
+    fileprivate static func populateRefreshRates(into submenu: NSMenu,
+                                                 for snapshot: DisplaySnapshot,
+                                                 hiddenTwins: Set<PixelSize>,
+                                                 router: MenuActionRouter) {
+        guard let current = snapshot.display.currentMode else { return }
 
         // The unfiltered table: the HiDPI filter only decides which list a row
         // goes into, and the user sitting in a 1× mode still needs the rates of
@@ -296,9 +321,6 @@ enum StatusMenuBuilder {
         let rates = modes
             .filter { $0.resolutionKey == current.resolutionKey }
             .sorted { $0.refreshRate > $1.refreshRate }
-
-        let parent = NSMenuItem(title: L10n.t("menu.refreshRate"), action: nil, keyEquivalent: "")
-        let submenu = NSMenu()
 
         // Nothing to offer because the current geometry was filtered out: show the
         // rate in use rather than an empty menu.
@@ -352,9 +374,6 @@ enum StatusMenuBuilder {
             item.state = .off
             submenu.addItem(item)
         }
-
-        parent.submenu = submenu
-        return parent
     }
 
     // MARK: - All displays
@@ -704,5 +723,54 @@ private final class LazyCapabilitiesMenu: NSObject, NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
         StatusMenuBuilder.populateCapabilities(into: menu, for: display)
+    }
+}
+
+/// Builds the resolution or refresh-rate submenu only when it is opened.
+///
+/// The top-level menu is shown dozens of times for every time the mode list is
+/// actually needed; keeping these empty until then removes the bulk of the menu
+/// build from the common path.
+private final class LazyModesMenu: NSObject, NSMenuDelegate {
+
+    enum Kind {
+        case resolutions
+        case refreshRates
+
+        var title: String {
+            switch self {
+            case .resolutions: return L10n.t("menu.resolution")
+            case .refreshRates: return L10n.t("menu.refreshRate")
+            }
+        }
+    }
+
+    private let kind: Kind
+    private let snapshot: DisplaySnapshot
+    private let hiddenTwins: Set<PixelSize>
+    private let router: MenuActionRouter
+
+    init(kind: Kind, snapshot: DisplaySnapshot,
+         hiddenTwins: Set<PixelSize>, router: MenuActionRouter) {
+        self.kind = kind
+        self.snapshot = snapshot
+        self.hiddenTwins = hiddenTwins
+        self.router = router
+    }
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
+        switch kind {
+        case .resolutions:
+            StatusMenuBuilder.populateResolutions(into: menu,
+                                                  for: snapshot,
+                                                  hiddenTwins: hiddenTwins,
+                                                  router: router)
+        case .refreshRates:
+            StatusMenuBuilder.populateRefreshRates(into: menu,
+                                                   for: snapshot,
+                                                   hiddenTwins: hiddenTwins,
+                                                   router: router)
+        }
     }
 }

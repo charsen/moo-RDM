@@ -239,7 +239,7 @@ final class SettingsViewController: NSViewController {
     }
 
     private func brightnessStatus() -> String {
-        let count = DisplayManager.allDisplays()
+        let count = DisplayManager.allInfos()
             .filter { DisplayBrightnessController.canChangeBrightness(of: $0.id) }
             .count
         return count > 0
@@ -254,7 +254,7 @@ final class SettingsViewController: NSViewController {
         guard Preferences.shared.enableOptionalModule else {
             return L10n.t("settings.status.disabled")
         }
-        let count = DisplayManager.allDisplays()
+        let count = DisplayManager.allInfos()
             .flatMap { DisplayManager.allModes(for: $0.id) }
             .filter(\.isPrivate)
             .count

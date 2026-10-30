@@ -79,12 +79,6 @@ final class ModeMemoryController {
         remember(display: DisplayManager.info(displayID, ordinal: ordinal))
     }
 
-    /// The mode this display would be restored to, if any.
-    func rememberedMode(for display: DisplayInfo) -> RememberedMode? {
-        let all = Preferences.shared.rememberedModes
-        return all[display.identity.key] ?? all[display.identity.legacyKey]
-    }
-
     /// Stops restoring a mode for this display. The display keeps whatever it is
     /// showing now; only the automatic restore is removed.
     func forget(display: DisplayInfo) {

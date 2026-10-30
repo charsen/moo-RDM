@@ -270,6 +270,14 @@ public enum DisplayManager {
     public static func snapshot(_ displayID: CGDirectDisplayID,
                                 ordinal: Int,
                                 includeUnusable: Bool = true) -> DisplaySnapshot {
+        snapshot(displayID, ordinal: ordinal, includeUnusable: includeUnusable,
+                 names: screenNameMap())
+    }
+
+    private static func snapshot(_ displayID: CGDirectDisplayID,
+                                 ordinal: Int,
+                                 includeUnusable: Bool,
+                                 names: [CGDirectDisplayID: String]) -> DisplaySnapshot {
         // Public rows are needed either way; the private table is only consulted
         // when the caller wants hidden modes. With the menu's default (hidden
         // modes off) this removes a per-row private call from every menu open.
@@ -285,7 +293,7 @@ public enum DisplayManager {
         let info = DisplayInfo(
             id: displayID,
             ordinal: ordinal,
-            name: name(for: displayID, ordinal: ordinal),
+            name: displayName(displayID, ordinal: ordinal, names: names),
             isBuiltin: CGDisplayIsBuiltin(displayID) != 0,
             isMain: CGDisplayIsMain(displayID) != 0,
             isActive: CGDisplayIsActive(displayID) != 0,
@@ -300,8 +308,11 @@ public enum DisplayManager {
     }
 
     public static func snapshots(includeUnusable: Bool = true) -> [DisplaySnapshot] {
-        onlineDisplayIDs().enumerated().map {
-            snapshot($0.element, ordinal: $0.offset, includeUnusable: includeUnusable)
+        // One NSScreen walk for the whole batch; asking per display was O(n²).
+        let names = screenNameMap()
+        return onlineDisplayIDs().enumerated().map {
+            snapshot($0.element, ordinal: $0.offset,
+                     includeUnusable: includeUnusable, names: names)
         }
     }
 
@@ -313,10 +324,16 @@ public enum DisplayManager {
     /// rotation, mirror state and identity. A full `snapshot` would enumerate
     /// every mode (and the private table) just to answer that.
     public static func info(_ displayID: CGDirectDisplayID, ordinal: Int) -> DisplayInfo {
+        info(displayID, ordinal: ordinal, names: screenNameMap())
+    }
+
+    private static func info(_ displayID: CGDirectDisplayID,
+                             ordinal: Int,
+                             names: [CGDirectDisplayID: String]) -> DisplayInfo {
         DisplayInfo(
             id: displayID,
             ordinal: ordinal,
-            name: name(for: displayID, ordinal: ordinal),
+            name: displayName(displayID, ordinal: ordinal, names: names),
             isBuiltin: CGDisplayIsBuiltin(displayID) != 0,
             isMain: CGDisplayIsMain(displayID) != 0,
             isActive: CGDisplayIsActive(displayID) != 0,
@@ -330,7 +347,18 @@ public enum DisplayManager {
     }
 
     public static func allInfos() -> [DisplayInfo] {
-        onlineDisplayIDs().enumerated().map { info($0.element, ordinal: $0.offset) }
+        let names = screenNameMap()
+        return onlineDisplayIDs().enumerated().map {
+            info($0.element, ordinal: $0.offset, names: names)
+        }
+    }
+
+    private static func displayName(_ displayID: CGDirectDisplayID,
+                                    ordinal: Int,
+                                    names: [CGDirectDisplayID: String]) -> String {
+        if let name = names[displayID], !name.isEmpty { return name }
+        if CGDisplayIsMain(displayID) != 0 { return L10n.t("menu.mainDisplay") }
+        return L10n.t("menu.display", Int32(ordinal + 1))
     }
 
     // MARK: - Assembly
