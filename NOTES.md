@@ -20,7 +20,8 @@
 - 两屏（Studio Display 5K + BenQ 4K）实测：顶层菜单构建 2.8 ms → 0.35–0.42 ms；
   显示、分辨率、刷新率子菜单都改为展开时构建（分辨率子菜单约 0.7 ms）。
 - 设置窗口首次创建 27 ms → 12 ms（只构建通用页）；偏好切换从 20 ms 级整窗重建
-  → 0.2 ms 原地更新。高级页首次展开约 36 ms，主要是 AppKit 布局成本。
+  → 0.2 ms 原地更新。高级页首次展开仍约 36 ms 的 AppKit 布局；窗口空闲 0.35 s
+  后预热，预热后首次点击约 8 ms。
 - `DisplayManager.allDisplays()` 约 3.3 ms（含私有模式表）；只取当前状态的
   `allInfos()` 约 0.3 ms。菜单动作、按屏记忆、预设捕获已改用后者。
 - 空 CoreGraphics 事务约 0.2–0.3 ms；目标状态已一致时直接跳过，约 0.015 ms，
@@ -32,3 +33,11 @@
 
 1.2.1 使用 `io.rdmarm.RDM-ARM`，1.2.2 起改为 `com.mooeen.rdm`。1.3.0 首次启动
 在新域仍为空时一次性复制旧域的偏好与按屏记忆；新域已有设置时不覆盖。
+
+## 2026-10-30 — 预设排列与记忆恢复提示
+
+- `PresetDisplay` 记录 `CGDisplayBounds` 的原点；应用时在同一个事务里调用
+  `CGConfigureDisplayOrigin`，镜像 slave 跳过原点（位置跟随主屏）。
+- 主屏指定没有公开的 CoreGraphics API，预设仍不记录。
+- 记忆恢复的折衷（刷新率替换、模式缺失、应用失败）记录在
+  `ModeMemoryController.lastRestoreNotes`，菜单打开对应显示时显示一行。
