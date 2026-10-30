@@ -16,11 +16,12 @@ final class SettingsWindowController: NSWindowController {
     init() {
         content = SettingsViewController()
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 500),
-                              styleMask: [.titled, .closable, .miniaturizable],
+                              styleMask: [.titled, .closable, .miniaturizable, .resizable],
                               backing: .buffered,
                               defer: false)
         window.title = L10n.t("settings.title")
         window.isReleasedWhenClosed = false
+        window.minSize = NSSize(width: 520, height: 380)
         window.contentViewController = content
         window.center()
         super.init(window: window)
@@ -34,12 +35,20 @@ final class SettingsWindowController: NSWindowController {
 final class SettingsViewController: NSViewController {
 
     private var tabView: NSTabView!
+    private var observers: [NSObjectProtocol] = []
+    private var rebuildScheduled = false
 
     init() {
         super.init(nibName: nil, bundle: nil)
     }
 
     required init?(coder: NSCoder) { fatalError("not supported") }
+
+    deinit {
+        for observer in observers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
 
     override func loadView() {
         view = NSView(frame: NSRect(x: 0, y: 0, width: 600, height: 500))
@@ -53,25 +62,75 @@ final class SettingsViewController: NSViewController {
         tabView.tabViewType = .topTabsBezelBorder
         view.addSubview(tabView)
 
+        buildTabs()
+
+        // The menu and the window edit the same preferences. Without this the
+        // window keeps whatever was true when it was first built — for the whole
+        // life of the process, because the controller is cached.
+        let center = NotificationCenter.default
+        observers.append(center.addObserver(forName: Preferences.didChangeNotification,
+                                            object: nil, queue: .main) { [weak self] _ in
+            self?.scheduleRebuild()
+        })
+        observers.append(center.addObserver(forName: .rdmLanguageChanged,
+                                            object: nil, queue: .main) { [weak self] _ in
+            self?.scheduleRebuild()
+        })
+    }
+
+    private func scheduleRebuild() {
+        // A language change posts both notifications; one rebuild is enough.
+        guard !rebuildScheduled else { return }
+        rebuildScheduled = true
+        // Rebuilding inside a control's own action would tear down the control
+        // that is still running it.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.rebuildScheduled = false
+            self.buildTabs()
+        }
+    }
+
+    private func buildTabs() {
+        view.window?.title = L10n.t("settings.title")
+        // A rebuild follows every preference change; without this, toggling
+        // something on the Advanced tab would throw the user back to General.
+        let selected = tabView.selectedTabViewItem.flatMap { tabView.indexOfTabViewItem($0) }
+        for item in tabView.tabViewItems { tabView.removeTabViewItem(item) }
         addTab(L10n.t("settings.general"), generalTab())
         addTab(L10n.t("settings.advanced"), advancedTab())
         addTab(L10n.t("settings.about"), aboutTab())
+        if let selected, selected >= 0, selected < tabView.numberOfTabViewItems {
+            tabView.selectTabViewItem(at: selected)
+        }
     }
 
     private func addTab(_ title: String, _ content: NSView) {
         let item = NSTabViewItem(identifier: title)
         item.label = title
 
+        let scroll = NSScrollView()
+        scroll.hasVerticalScroller = true
+        scroll.autohidesScrollers = true
+        scroll.drawsBackground = false
+        scroll.borderType = .noBorder
+
         let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        scroll.documentView = container
+
         content.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(content)
         NSLayoutConstraint.activate([
             content.topAnchor.constraint(equalTo: container.topAnchor, constant: 16),
             content.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 18),
             content.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -18),
+            content.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -16),
+            container.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
+            container.heightAnchor.constraint(greaterThanOrEqualTo: scroll.contentView.heightAnchor),
         ])
 
-        item.view = container
+        item.view = scroll
         tabView.addTabViewItem(item)
     }
 
@@ -108,7 +167,7 @@ final class SettingsViewController: NSViewController {
 
         stack.addArrangedSubview(divider())
 
-        stack.addArrangedSubview(sectionLabel(L10n.t("settings.rememberPerDisplay")))
+        stack.addArrangedSubview(sectionLabel(L10n.t("settings.section.memory")))
         stack.addArrangedSubview(checkbox(L10n.t("settings.rememberPerDisplay"),
                                           on: Preferences.shared.rememberPerDisplay,
                                           action: #selector(toggleRemember(_:))))
@@ -126,7 +185,7 @@ final class SettingsViewController: NSViewController {
     private func advancedTab() -> NSView {
         let stack = verticalStack()
 
-        stack.addArrangedSubview(sectionLabel(L10n.t("settings.permanent")))
+        stack.addArrangedSubview(sectionLabel(L10n.t("settings.section.changes")))
         stack.addArrangedSubview(checkbox(L10n.t("settings.permanent"),
                                           on: Preferences.shared.permanentChanges,
                                           action: #selector(togglePermanent(_:))))
@@ -134,7 +193,7 @@ final class SettingsViewController: NSViewController {
 
         stack.addArrangedSubview(divider())
 
-        stack.addArrangedSubview(sectionLabel(L10n.t("settings.optionalModule")))
+        stack.addArrangedSubview(sectionLabel(L10n.t("settings.section.private")))
         stack.addArrangedSubview(checkbox(L10n.t("settings.optionalModule"),
                                           on: Preferences.shared.enableOptionalModule,
                                           action: #selector(toggleOptionalModule(_:))))
@@ -146,7 +205,7 @@ final class SettingsViewController: NSViewController {
 
         stack.addArrangedSubview(divider())
 
-        stack.addArrangedSubview(sectionLabel(L10n.t("settings.diagnostics")))
+        stack.addArrangedSubview(sectionLabel(L10n.t("settings.diagnostics.title")))
 
         let copyButton = NSButton(title: L10n.t("settings.diagnostics"), target: self, action: #selector(copyDiagnostics(_:)))
         copyButton.bezelStyle = .rounded
@@ -162,25 +221,37 @@ final class SettingsViewController: NSViewController {
     }
 
     private func rotationStatus() -> String {
-        guard DisplayRotationController.isSymbolPresent else { return "unavailable on this system" }
-        return Preferences.shared.enableOptionalModule ? "available" : "disabled"
+        guard DisplayRotationController.isSymbolPresent else {
+            return L10n.t("settings.status.unavailable")
+        }
+        return Preferences.shared.enableOptionalModule
+            ? L10n.t("settings.status.available")
+            : L10n.t("settings.status.disabled")
     }
 
     private func brightnessStatus() -> String {
         let count = DisplayManager.allDisplays()
             .filter { DisplayBrightnessController.canChangeBrightness(of: $0.id) }
             .count
-        return count > 0 ? "available on \(count) display(s)" : "unavailable on this system"
+        return count > 0
+            ? L10n.t("settings.status.brightness", Int32(count))
+            : L10n.t("settings.status.unavailable")
     }
 
     private func hiddenHiDPIStatus() -> String {
-        guard PrivateModeTable.isSymbolPresent else { return "unavailable on this system" }
-        guard Preferences.shared.enableOptionalModule else { return "disabled" }
+        guard PrivateModeTable.isSymbolPresent else {
+            return L10n.t("settings.status.unavailable")
+        }
+        guard Preferences.shared.enableOptionalModule else {
+            return L10n.t("settings.status.disabled")
+        }
         let count = DisplayManager.allDisplays()
             .flatMap { DisplayManager.allModes(for: $0.id) }
             .filter(\.isPrivate)
             .count
-        return count > 0 ? "\(count) extra mode(s) offered" : "none offered"
+        return count > 0
+            ? L10n.t("settings.status.hiddenHiDPI", Int32(count))
+            : L10n.t("settings.status.none")
     }
 
     // MARK: - About
