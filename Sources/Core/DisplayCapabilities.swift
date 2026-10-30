@@ -254,6 +254,12 @@ public enum DisplayCapabilities {
                 if offeredRates.contains(where: { abs($0 - target) <= tolerance }) {
                     return .offered
                 }
+                // The link is the harder limit: a rate the panel declares but the
+                // link cannot carry must not be reported as "just hidden by
+                // macOS", because switching to it will fail.
+                if let ceiling, target > ceiling + tolerance {
+                    return .beyondLink
+                }
                 if declaredRates.contains(where: { abs($0 - target) <= tolerance }) {
                     return .hidden
                 }

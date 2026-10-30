@@ -106,10 +106,27 @@ public enum ModeController {
                              unmirroring unmirror: [CGDirectDisplayID] = [],
                              permanently: Bool = false) -> Result<Void, ApplyError> {
         guard !assignments.isEmpty || !mirror.isEmpty || !unmirror.isEmpty else { return .success(()) }
+
+        // Drop work that would not change anything. Reapplying the current mode
+        // (or the same mirror link) still opens a display configuration and makes
+        // the desktop reflow; a menu row that is already ticked should not.
+        let pendingAssignments = assignments.filter { assignment in
+            guard let current = DisplayManager.currentMode(for: assignment.displayID) else { return true }
+            return !current.isSame(as: assignment.mode)
+        }
+        let pendingMirror = mirror.filter { slave, master in
+            CGDisplayMirrorsDisplay(slave) != master
+        }
+        let pendingUnmirror = unmirror.filter { CGDisplayMirrorsDisplay($0) != kCGNullDirectDisplay }
+
+        guard !pendingAssignments.isEmpty || !pendingMirror.isEmpty || !pendingUnmirror.isEmpty else {
+            return .success(())
+        }
+
         // Private-table modes have no `CGDisplayMode` and are configured through a
         // separate call that opens its own transaction. A batch mixing the two
         // cannot be atomic, so it is refused rather than half-applied.
-        guard assignments.allSatisfy({ $0.mode.cgMode != nil }) else {
+        guard pendingAssignments.allSatisfy({ $0.mode.cgMode != nil }) else {
             return .failure(.privateModeInBatch)
         }
 
@@ -119,7 +136,7 @@ public enum ModeController {
             return .failure(.beginFailed(begin))
         }
 
-        for displayID in unmirror {
+        for displayID in pendingUnmirror {
             let result = CGConfigureDisplayMirrorOfDisplay(config, displayID, kCGNullDirectDisplay)
             guard result == .success else {
                 CGCancelDisplayConfiguration(config)
@@ -127,7 +144,7 @@ public enum ModeController {
             }
         }
 
-        for assignment in assignments {
+        for assignment in pendingAssignments {
             guard let cgMode = assignment.mode.cgMode else {
                 CGCancelDisplayConfiguration(config)
                 return .failure(.privateModeInBatch)
@@ -142,7 +159,7 @@ public enum ModeController {
             }
         }
 
-        for (slave, master) in mirror {
+        for (slave, master) in pendingMirror {
             let result = CGConfigureDisplayMirrorOfDisplay(config, slave, master)
             guard result == .success else {
                 CGCancelDisplayConfiguration(config)
