@@ -1,8 +1,9 @@
 # RDM-ARM 1.4.2 —— Studio Display 常用模式、跨屏匹配与镜像守卫
 
-状态：**本地已合并，签名与公证完成；待 push/tag。**
+状态：**双源已发布**。Gitee（origin）与 GitHub 的 `master`、`dev`、tag `1.4.2`
+与 Release 附件一致。
 `feat-rdm-usability`、`dev`、`master` 指向同一提交；`build/RDM-ARM-1.4.2-universal.dmg`
-已 Developer ID 签名、Apple 公证并 staple。尚未 push 到 Gitee/GitHub，尚未打 tag。
+已 Developer ID 签名、Apple 公证并 staple。
 
 ## 起因
 
