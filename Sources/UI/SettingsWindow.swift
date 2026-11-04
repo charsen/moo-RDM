@@ -62,6 +62,7 @@ final class SettingsViewController: NSViewController, NSTabViewDelegate {
     private var rotationStatusLabel: NSTextField?
     private var brightnessStatusLabel: NSTextField?
     private var hiddenHiDPIStatusLabel: NSTextField?
+    private let feedbackController = FeedbackViewController()
 
     init() {
         super.init(nibName: nil, bundle: nil)
@@ -91,6 +92,7 @@ final class SettingsViewController: NSViewController, NSTabViewDelegate {
         makeTab(titleKey: "settings.general", identifier: "general")
         makeTab(titleKey: "settings.advanced", identifier: "advanced")
         makeTab(titleKey: "settings.update", identifier: "update")
+        makeTab(titleKey: "settings.feedback", identifier: "feedback")
         makeTab(titleKey: "settings.about", identifier: "about")
         tabView.selectTabViewItem(at: 0)
         installTab(at: 0)
@@ -168,6 +170,7 @@ final class SettingsViewController: NSViewController, NSTabViewDelegate {
         case 0: content = generalTab()
         case 1: content = advancedTab()
         case 2: content = updateTab()
+        case 3: content = feedbackTab()
         default: content = aboutTab()
         }
 
@@ -496,6 +499,11 @@ final class SettingsViewController: NSViewController, NSTabViewDelegate {
         stack.addArrangedSubview(checkButton)
 
         return stack
+    }
+
+    private func feedbackTab() -> NSView {
+        feedbackController.start()
+        return feedbackController.view
     }
 
     // MARK: - Actions
