@@ -63,6 +63,7 @@ final class SettingsViewController: NSViewController, NSTabViewDelegate {
     private var brightnessStatusLabel: NSTextField?
     private var hiddenHiDPIStatusLabel: NSTextField?
     private let feedbackController = FeedbackViewController()
+    private let updateController = UpdateSettingsViewController()
 
     init() {
         super.init(nibName: nil, bundle: nil)
@@ -485,20 +486,8 @@ final class SettingsViewController: NSViewController, NSTabViewDelegate {
     // MARK: - Update
 
     private func updateTab() -> NSView {
-        let stack = verticalStack(spacing: 12)
-        stack.alignment = .centerX
-
-        let current = NSTextField(labelWithString: L10n.t("about.version", AppInfo.version))
-        current.textColor = .secondaryLabelColor
-        stack.addArrangedSubview(current)
-
-        let checkButton = NSButton(title: L10n.t("about.checkUpdate"),
-                                   target: self,
-                                   action: #selector(checkForUpdates(_:)))
-        checkButton.bezelStyle = .rounded
-        stack.addArrangedSubview(checkButton)
-
-        return stack
+        updateController.start()
+        return updateController.view
     }
 
     private func feedbackTab() -> NSView {
