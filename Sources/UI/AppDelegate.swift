@@ -14,10 +14,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         L10n.language = Preferences.shared.language
 
+        // 首次启动就把匿名 install_id 落盘，检查更新与后台备注都靠它。
+        _ = InstallIdentity.id
+
         router = MenuActionRouter(memory: memory)
         router.onMenuNeedsRebuild = { [weak self] in self?.requestRebuild() }
         router.onShowPreferences = { [weak self] in self?.showSettings() }
         router.onShowAbout = { [weak self] in self?.showAbout() }
+        router.onCheckForUpdates = { UpdatePresenter.present() }
 
         installStatusItem()
         installMainMenu()
@@ -26,6 +30,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // relaunching silently skipped restoring remembered modes until the
         // display was re-attached.
         memory.restoreAfterLaunch()
+
+        // 超过三天自动检查一次；延迟几秒，别和菜单栏启动抢时间。
+        if UpdateCheckStore.isDue() {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                UpdatePresenter.check(automatic: true)
+            }
+        }
 
         // Keep the menu honest when the world changes underneath us.
         NotificationCenter.default.addObserver(self,
@@ -79,6 +90,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         appMenu.addItem(about)
         appMenu.addItem(.separator())
 
+        let checkForUpdates = NSMenuItem(title: L10n.t("menu.checkForUpdates"),
+                                         action: #selector(checkForUpdatesFromMainMenu(_:)),
+                                         keyEquivalent: "")
+        checkForUpdates.target = self
+        appMenu.addItem(checkForUpdates)
+
         let preferences = NSMenuItem(title: L10n.t("menu.preferences"),
                                      action: #selector(openPreferencesFromMainMenu(_:)),
                                      keyEquivalent: ",")
@@ -102,6 +119,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func showAboutFromMainMenu(_ sender: Any?) {
         showAbout()
+    }
+
+    @objc private func checkForUpdatesFromMainMenu(_ sender: Any?) {
+        UpdatePresenter.present()
     }
 
     func menuWillOpen(_ menu: NSMenu) {
@@ -160,8 +181,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             attributes: [.font: NSFont.systemFont(ofSize: 11)]
         ))
         credits.append(NSAttributedString(
-            string: L10n.t("about.license"),
+            string: L10n.t("about.license") + "\n\n",
             attributes: [.font: NSFont.systemFont(ofSize: 11)]
+        ))
+        credits.append(NSAttributedString(
+            string: L10n.t("about.installId", InstallIdentity.id),
+            attributes: [
+                .font: NSFont.monospacedSystemFont(ofSize: 10, weight: .regular),
+                .foregroundColor: NSColor.secondaryLabelColor,
+            ]
         ))
 
         let options: [NSApplication.AboutPanelOptionKey: Any] = [

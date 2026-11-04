@@ -90,6 +90,7 @@ final class SettingsViewController: NSViewController, NSTabViewDelegate {
 
         makeTab(titleKey: "settings.general", identifier: "general")
         makeTab(titleKey: "settings.advanced", identifier: "advanced")
+        makeTab(titleKey: "settings.update", identifier: "update")
         makeTab(titleKey: "settings.about", identifier: "about")
         tabView.selectTabViewItem(at: 0)
         installTab(at: 0)
@@ -166,6 +167,7 @@ final class SettingsViewController: NSViewController, NSTabViewDelegate {
         switch index {
         case 0: content = generalTab()
         case 1: content = advancedTab()
+        case 2: content = updateTab()
         default: content = aboutTab()
         }
 
@@ -443,6 +445,16 @@ final class SettingsViewController: NSViewController, NSTabViewDelegate {
         version.textColor = .secondaryLabelColor
         stack.addArrangedSubview(version)
 
+        let installID = NSTextField(labelWithString: L10n.t("about.installId", InstallIdentity.id))
+        installID.font = .monospacedSystemFont(ofSize: 10, weight: .regular)
+        installID.textColor = .secondaryLabelColor
+        installID.alignment = .center
+        installID.isSelectable = true
+        installID.lineBreakMode = .byTruncatingMiddle
+        installID.preferredMaxLayoutWidth = 420
+        installID.toolTip = InstallIdentity.id
+        stack.addArrangedSubview(installID)
+
         stack.addArrangedSubview(divider())
 
         for text in [L10n.t("about.credits"), L10n.t("about.engine"), L10n.t("about.license")] {
@@ -458,10 +470,51 @@ final class SettingsViewController: NSViewController, NSTabViewDelegate {
         repoButton.bezelStyle = .rounded
         stack.addArrangedSubview(repoButton)
 
+        let copyButton = NSButton(title: L10n.t("about.copyInstallId"),
+                                  target: self,
+                                  action: #selector(copyInstallId(_:)))
+        copyButton.bezelStyle = .rounded
+        stack.addArrangedSubview(copyButton)
+
+        return stack
+    }
+
+    // MARK: - Update
+
+    private func updateTab() -> NSView {
+        let stack = verticalStack(spacing: 12)
+        stack.alignment = .centerX
+
+        let current = NSTextField(labelWithString: L10n.t("about.version", AppInfo.version))
+        current.textColor = .secondaryLabelColor
+        stack.addArrangedSubview(current)
+
+        let checkButton = NSButton(title: L10n.t("about.checkUpdate"),
+                                   target: self,
+                                   action: #selector(checkForUpdates(_:)))
+        checkButton.bezelStyle = .rounded
+        stack.addArrangedSubview(checkButton)
+
         return stack
     }
 
     // MARK: - Actions
+
+    @objc private func checkForUpdates(_ sender: NSButton) {
+        UpdatePresenter.present()
+    }
+
+    @objc private func copyInstallId(_ sender: NSButton) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(InstallIdentity.id, forType: .string)
+
+        let original = L10n.t("about.copyInstallId")
+        sender.title = L10n.t("about.copied")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak sender] in
+            sender?.title = original
+        }
+    }
 
     @objc private func languageChanged(_ sender: NSPopUpButton) {
         guard let raw = sender.selectedItem?.representedObject as? String,

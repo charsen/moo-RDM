@@ -89,6 +89,7 @@ final class MenuActionRouter: NSObject {
     var onMenuNeedsRebuild: (() -> Void)?
     var onShowPreferences: (() -> Void)?
     var onShowAbout: (() -> Void)?
+    var onCheckForUpdates: (() -> Void)?
 
     let memory: ModeMemoryController
 
@@ -441,6 +442,10 @@ final class MenuActionRouter: NSObject {
 
     @objc func showAbout(_ sender: NSMenuItem) {
         onShowAbout?()
+    }
+
+    @objc func checkForUpdates(_ sender: NSMenuItem) {
+        onCheckForUpdates?()
     }
 
     @objc func quit(_ sender: NSMenuItem) {

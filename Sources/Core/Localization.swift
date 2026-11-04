@@ -104,6 +104,7 @@ public enum L10n {
         "menu.hiDPIOnly": "HiDPI modes only",
         "menu.hiDPIOnly.hint": "Keep the main list HiDPI-only; standard entries move to their own submenu",
         "menu.preferences": "Preferences…",
+        "menu.checkForUpdates": "Check for Updates…",
         "menu.about": "About RDM-ARM",
         "menu.quit": "Quit RDM-ARM",
         "menu.resetToDefault": "Reset to system default",
@@ -165,6 +166,7 @@ public enum L10n {
         "settings.title": "RDM-ARM Preferences",
         "settings.general": "General",
         "settings.advanced": "Advanced",
+        "settings.update": "Updates",
         "settings.about": "About",
 
         "settings.language": "Language",
@@ -210,6 +212,25 @@ public enum L10n {
         "about.license": "Upstream RDM carries no formal licence; this rework is provided as-is.",
         "about.engine": "Display engine: public CoreGraphics API only.",
         "about.repo": "Source code",
+        "about.installId": "Install ID: %@",
+        "about.checkUpdate": "Check for Updates",
+        "about.copyInstallId": "Copy Install ID",
+        "about.copied": "Copied",
+
+        "update.title": "Check for Updates",
+        "update.upToDate": "You're up to date (version %@).",
+        "update.available": "Version %@ is available",
+        "update.available.hint": "Open the download page to install the new version.",
+        "update.download": "Download",
+        "update.later": "Later",
+        "update.error.network": "Could not reach the update server. Check your network and try again.",
+        "update.error.rateLimited": "Too many checks. Try again in a minute.",
+        "update.error.notFound": "This app is not registered for update checks yet.",
+        "update.error.invalid": "The update server returned an unreadable response.",
+        "update.error.noDownload": "No download address was returned.",
+        "update.reason.noPackage": "No package has been published for this platform yet.",
+        "update.reason.archRequired": "The update server needs the chip architecture; please update the app.",
+        "update.reason.restricted": "This version is not available for this install yet.",
 
         "error.noSuchDisplay": "No display matches index %d",
         "error.noSuchMode": "No mode matches %@",
@@ -277,6 +298,8 @@ public enum L10n {
                                         Why a rate is or is not reachable
           rdm-arm --custom-timing 1920x1080@75 --write
                                         Try a rate the panel never advertised
+          rdm-arm --install-id          Print the anonymous install ID
+          rdm-arm --check-update        Ask the update server for the latest version
 
         OPTIONS
           -w, --width <n>       Width in points
@@ -303,6 +326,8 @@ public enum L10n {
               --hidpi           Only consider HiDPI modes
               --permanent       Persist the chosen mode across restarts
               --json            Machine-readable output
+              --install-id      Print the anonymous install ID
+              --check-update    Check the update server for a newer version
           -v, --version         Print version
               --help            Show this help
               --selftest        Run GUI diagnostics (status item + menu) and exit
@@ -377,6 +402,7 @@ public enum L10n {
         "menu.hiDPIOnly": "仅显示 HiDPI 模式",
         "menu.hiDPIOnly.hint": "主列表只留 HiDPI，标准分辨率收进单独的子菜单",
         "menu.preferences": "偏好设置…",
+        "menu.checkForUpdates": "检查更新…",
         "menu.about": "关于 RDM-ARM",
         "menu.quit": "退出 RDM-ARM",
         "menu.resetToDefault": "恢复系统默认",
@@ -438,6 +464,7 @@ public enum L10n {
         "settings.title": "RDM-ARM 偏好设置",
         "settings.general": "通用",
         "settings.advanced": "高级",
+        "settings.update": "更新",
         "settings.about": "关于",
 
         "settings.language": "界面语言",
@@ -483,6 +510,25 @@ public enum L10n {
         "about.license": "上游 RDM 未附正式许可证，本重写版按原样提供。",
         "about.engine": "显示引擎：仅使用公开 CoreGraphics API。",
         "about.repo": "源代码",
+        "about.installId": "安装标识：%@",
+        "about.checkUpdate": "检查更新",
+        "about.copyInstallId": "复制安装标识",
+        "about.copied": "已复制",
+
+        "update.title": "检查更新",
+        "update.upToDate": "当前已是最新版本（%@）。",
+        "update.available": "发现新版本 %@",
+        "update.available.hint": "打开下载页即可安装新版本。",
+        "update.download": "下载新版本",
+        "update.later": "稍后",
+        "update.error.network": "无法连接更新服务器，请检查网络后重试。",
+        "update.error.rateLimited": "检查过于频繁，请稍后再试。",
+        "update.error.notFound": "这个应用还没有在更新服务里登记。",
+        "update.error.invalid": "更新服务器返回了无法识别的内容。",
+        "update.error.noDownload": "没有拿到下载地址。",
+        "update.reason.noPackage": "当前平台还没有发布包。",
+        "update.reason.archRequired": "更新服务需要芯片架构信息，请先升级应用。",
+        "update.reason.restricted": "当前版本暂未对你开放。",
 
         "error.noSuchDisplay": "没有索引为 %d 的显示器",
         "error.noSuchMode": "没有匹配 %@ 的模式",
@@ -550,6 +596,8 @@ public enum L10n {
                                         某个刷新率为什么拿不到
           rdm-arm --custom-timing 1920x1080@75 --write
                                         试一个面板从未声明过的刷新率
+          rdm-arm --install-id          输出匿名安装标识
+          rdm-arm --check-update        向更新服务器查询最新版本
 
         选项
           -w, --width <n>       宽度（点）
@@ -576,6 +624,8 @@ public enum L10n {
               --hidpi           只考虑 HiDPI 模式
               --permanent       所选模式在重启后依然生效
               --json            输出机器可读格式
+              --install-id      输出匿名安装标识
+              --check-update    向更新服务器查询最新版本
           -v, --version         显示版本
               --help            显示帮助
               --selftest        运行 GUI 自检（菜单栏图标 + 菜单）并退出

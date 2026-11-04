@@ -47,6 +47,8 @@ public enum CommandLineRunner {
         var showHelp = false
         var showVersion = false
         var selfTestTiming = false
+        var showInstallID = false
+        var checkUpdate = false
 
         /// True when the user asked us to actually change something.
         var wantsChange: Bool {
@@ -83,6 +85,13 @@ public enum CommandLineRunner {
             print(AppInfo.versionDescription)
             return 0
         }
+        if options.showInstallID {
+            print(InstallIdentity.id)
+            return 0
+        }
+        if options.checkUpdate {
+            return checkForUpdate()
+        }
         if options.selfTestTiming {
             let timing = TimingSelfTest.run(displayIndex: options.displayIndex)
             let presets = DisplayPresetSelfTest.run()
@@ -115,6 +124,33 @@ public enum CommandLineRunner {
 
         print(L10n.t("cli.usage"))
         return 0
+    }
+
+    private static func checkForUpdate() -> Int32 {
+        let semaphore = DispatchSemaphore(value: 0)
+        var status: Int32 = 1
+
+        UpdateChecker.shared.check { outcome in
+            switch outcome {
+            case .upToDate(let latest):
+                print("up to date: \(latest ?? AppInfo.version)")
+                status = 0
+            case .available(let update):
+                print("update available: \(update.version) \(update.url.absoluteString)")
+                status = 0
+            case .failed(let reason):
+                print("check failed: \(reason)")
+                status = 2
+            }
+            semaphore.signal()
+        }
+
+        if semaphore.wait(timeout: .now() + 20) == .timedOut {
+            print("check timed out")
+            return 3
+        }
+
+        return status
     }
 
     // MARK: - Parsing
@@ -168,6 +204,10 @@ public enum CommandLineRunner {
                 options.hiDPIOnly = true
             case "--json":
                 options.json = true
+            case "--install-id":
+                options.showInstallID = true
+            case "--check-update":
+                options.checkUpdate = true
             case "--permanent":
                 options.permanent = true
 

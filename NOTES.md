@@ -100,3 +100,9 @@
   回到“显示器 N”的回退，不影响功能。
 - 真机验证：在线名称写入缓存 → 镜像后从屏仍为 “BenQ PD2705U”，菜单标题一致；
   停止镜像、模式与排列恢复后名称仍正常。两回合分别覆盖名称专项与核心回归。
+
+## 2026-11-03 — 安装标识与检查更新
+
+- `InstallIdentity` 把匿名 UUID 存在 UserDefaults `installId`。macOS 删除 `.app` 不删 `~/Library/Preferences`，重装/升级保持同一个 ID；用户清理偏好或换机后由后台把新 ID 合并到旧档案。
+- 更新检查走云端 `GET /api/v1/updates/check`（`app=moo-rdm`），只有直装 DMG 版接入；App Store 版不能自建更新通道。
+- 状态菜单「检查更新…」与设置-关于页共用 `UpdatePresenter`；`--install-id` / `--check-update` 可在命令行验证，本地联调用 `RDM_UPDATE_BASE_URL`。

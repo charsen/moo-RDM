@@ -36,6 +36,9 @@ enum StatusMenuBuilder {
         menu.addItem(action(L10n.t("menu.preferences"),
                             #selector(MenuActionRouter.openPreferences(_:)),
                             router, key: ","))
+        menu.addItem(action(L10n.t("menu.checkForUpdates"),
+                            #selector(MenuActionRouter.checkForUpdates(_:)),
+                            router))
         menu.addItem(action(L10n.t("menu.about"),
                             #selector(MenuActionRouter.showAbout(_:)),
                             router))
