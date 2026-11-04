@@ -11,7 +11,7 @@
 ## 2. 构建
 
 ```bash
-cd /Volumes/dev/wwwroot/moo-RDM
+cd <repo-root>
 ./build.sh --universal
 ./build.sh --install
 ```
