@@ -24,8 +24,8 @@ cd <repo-root>
 - 日期：2026-11-04
 - 版本：1.4.3（build 9）
 - 文件：`build/RDM-ARM-1.4.3-universal.dmg`
-- 大小：2,797,230 字节
-- SHA-256：`3a4de370ad4a6a24b68974d11acab75da115ec21e7abeeeddecfc1423dc2533c`
+- 大小：2,796,510 字节
+- SHA-256：`3022c7d3a6c95f42b3389e5fdd6bec0394e9568454d8c42379e32009e7f39b0c`
 - 架构：x86_64 arm64
 
 ## 4. 验证
@@ -41,3 +41,5 @@ RDM_UPDATE_BASE_URL=https://c.mooeen.com \
 
 - 上传 dmg 到 cloud，平台 `macos`、架构 `universal`、格式 `dmg`。
 - 核对接口返回的版本、大小、SHA-256。
+
+`spctl -a -vv -t install build/RDM-ARM-1.4.3-universal.dmg` 必须为 accepted，`xcrun stapler validate` 必须通过；未公证不得发布。
