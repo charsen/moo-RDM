@@ -11,7 +11,7 @@
 
 | 平台 | 架构 | 格式 | 发行方式 | 当前状态 |
 | --- | --- | --- | --- | --- |
-| macOS | universal（覆盖 arm64/x64） | dmg | 直装 | 1.4.2 已发布 |
+| macOS | universal（覆盖 arm64/x64） | dmg | 直装 | 1.4.3 已发布 |
 | Windows | — | — | — | 不支持 |
 | Linux | — | — | — | 不支持 |
 
@@ -58,4 +58,4 @@ RDM_UPDATE_BASE_URL=https://c.mooeen.com \
   ./build/RDM-ARM.app/Contents/MacOS/RDM-ARM --check-update
 ```
 
-期望当前 1.4.2 输出 `up to date: 1.4.2`。
+期望当前 1.4.3 输出 `up to date: 1.4.3`。
