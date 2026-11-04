@@ -22,6 +22,11 @@ final class FeedbackViewController: NSViewController {
         root.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(root)
 
+        let slogan = NSTextField(labelWithString: L10n.t("feedback.slogan"))
+        slogan.font = .systemFont(ofSize: 16, weight: .semibold)
+        slogan.textColor = .labelColor
+        root.addArrangedSubview(slogan)
+
         let intro = NSTextField(wrappingLabelWithString: L10n.t("feedback.intro"))
         intro.font = .systemFont(ofSize: 11)
         intro.textColor = .secondaryLabelColor
