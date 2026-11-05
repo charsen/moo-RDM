@@ -22,6 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         router.onShowPreferences = { [weak self] in self?.showSettings() }
         router.onShowAbout = { [weak self] in self?.showAbout() }
         router.onCheckForUpdates = { UpdatePresenter.present() }
+        router.onShowFeedback = { [weak self] in self?.showSettings(tab: "feedback") }
 
         installStatusItem()
         installMainMenu()
