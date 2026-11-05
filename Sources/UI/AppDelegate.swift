@@ -96,6 +96,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         checkForUpdates.target = self
         appMenu.addItem(checkForUpdates)
 
+        let feedback = NSMenuItem(title: L10n.t("menu.feedback"),
+                                  action: #selector(showFeedbackFromMainMenu(_:)),
+                                  keyEquivalent: "")
+        feedback.target = self
+        appMenu.addItem(feedback)
+
         let preferences = NSMenuItem(title: L10n.t("menu.preferences"),
                                      action: #selector(openPreferencesFromMainMenu(_:)),
                                      keyEquivalent: ",")
@@ -123,6 +129,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func checkForUpdatesFromMainMenu(_ sender: Any?) {
         UpdatePresenter.present()
+    }
+
+    @objc private func showFeedbackFromMainMenu(_ sender: Any?) {
+        showSettings(tab: "feedback")
     }
 
     func menuWillOpen(_ menu: NSMenu) {
@@ -156,8 +166,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: - Windows
 
-    private func showSettings() {
+    private func showSettings(tab: String? = nil) {
         if let controller = settingsWindow, let window = controller.window {
+            controller.selectTab(tab)
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
@@ -165,6 +176,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         let controller = SettingsWindowController()
         settingsWindow = controller
+        controller.selectTab(tab)
 
         controller.window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)

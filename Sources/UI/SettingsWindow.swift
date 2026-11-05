@@ -28,6 +28,12 @@ final class SettingsWindowController: NSWindowController {
     }
 
     required init?(coder: NSCoder) { fatalError("not supported") }
+
+    func selectTab(_ identifier: String?) {
+        guard let identifier else { return }
+        _ = content.view
+        content.selectTab(identifier)
+    }
 }
 
 // MARK: - Tab host
@@ -190,6 +196,12 @@ final class SettingsViewController: NSViewController, NSTabViewDelegate {
     func tabView(_ tabView: NSTabView, didSelect item: NSTabViewItem?) {
         guard let item else { return }
         installTab(at: tabView.indexOfTabViewItem(item))
+    }
+
+    func selectTab(_ identifier: String) {
+        guard let index = tabs.firstIndex(where: { ($0.item.identifier as? String) == identifier }) else { return }
+        installTab(at: index)
+        tabView.selectTabViewItem(at: index)
     }
 
     private func scheduleLanguageRebuild() {
