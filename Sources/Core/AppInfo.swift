@@ -5,9 +5,9 @@ public enum AppInfo {
 
     public static let name = "RDM-ARM"
 
-    public static let version = "1.4.3"
+    public static let version = "1.4.4"
 
-    public static let build = "9"
+    public static let build = "10"
 
     public static let bundleIdentifier = "com.mooeen.rdm"
 
