@@ -27,8 +27,8 @@ set -euo pipefail
 
 APP_NAME="RDM-ARM"
 BUNDLE_ID="com.mooeen.rdm"
-VERSION="1.4.5"
-BUILD="11"
+VERSION="1.4.6"
+BUILD="12"
 MIN_MACOS="13.0"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -192,6 +192,15 @@ cp "$BUILD_DIR/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP/Contents/Info.plist" >/dev/null
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD" "$APP/Contents/Info.plist" >/dev/null
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" "$APP/Contents/Info.plist" >/dev/null
+
+# 反馈 Token 只在本机构建时注入，不写进仓库 / Info.plist 模板。
+FEEDBACK_TOKEN="${RDM_FEEDBACK_TOKEN:-}"
+if [ -z "$FEEDBACK_TOKEN" ] && [ -n "${RDM_FEEDBACK_TOKEN_FILE:-}" ]; then
+  FEEDBACK_TOKEN="$(tr -d '\r\n' < "$RDM_FEEDBACK_TOKEN_FILE")"
+fi
+if [ -n "$FEEDBACK_TOKEN" ]; then
+  /usr/libexec/PlistBuddy -c "Set :RDMFeedbackToken $FEEDBACK_TOKEN" "$APP/Contents/Info.plist" >/dev/null
+fi
 
 plutil -lint "$APP/Contents/Info.plist" >/dev/null
 

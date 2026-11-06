@@ -70,13 +70,14 @@ public enum FeedbackDeviceIdentity {
     }
 }
 
-/// 调云端 `/api/v1/feedback`，无 token；身份 = 账号（本应用暂无）或稳定设备 ID。
+/// 调云端 `/api/v1/feedback`；token 由构建时注入 Info.plist，身份 = 账号（本应用暂无）或稳定设备 ID。
 public final class FeedbackClient {
 
     public static let shared = FeedbackClient()
 
     private let session: URLSession
     private let baseURL: String
+    private let feedbackToken: String?
 
     private init() {
         let configuration = URLSessionConfiguration.ephemeral
@@ -86,6 +87,11 @@ public final class FeedbackClient {
         baseURL = ProcessInfo.processInfo.environment["RDM_FEEDBACK_BASE_URL"]
             ?? ProcessInfo.processInfo.environment["RDM_UPDATE_BASE_URL"]
             ?? "https://c.mooeen.com"
+
+        let envToken = ProcessInfo.processInfo.environment["RDM_FEEDBACK_TOKEN"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let plistToken = (Bundle.main.object(forInfoDictionaryKey: "RDMFeedbackToken") as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        feedbackToken = (envToken?.isEmpty == false ? envToken : plistToken)
     }
 
     public func list(completion: @escaping (FeedbackResult) -> Void) {
@@ -107,6 +113,7 @@ public final class FeedbackClient {
         request.httpMethod = "GET"
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.setValue("RDM-ARM/\(AppInfo.version) (macOS)", forHTTPHeaderField: "User-Agent")
+        Self.authorize(&request, token: feedbackToken)
 
         session.dataTask(with: request) { data, response, error in
             completion(Self.decodeList(data: data, response: response, error: error))
@@ -143,11 +150,17 @@ public final class FeedbackClient {
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("RDM-ARM/\(AppInfo.version) (macOS)", forHTTPHeaderField: "User-Agent")
+        Self.authorize(&request, token: feedbackToken)
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
         session.dataTask(with: request) { data, response, error in
             completion(Self.decodeSubmit(data: data, response: response, error: error))
         }.resume()
+    }
+
+    private static func authorize(_ request: inout URLRequest, token: String?) {
+        guard let token, !token.isEmpty else { return }
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
     }
 
     private static func decodeList(data: Data?, response: URLResponse?, error: Error?) -> FeedbackResult {

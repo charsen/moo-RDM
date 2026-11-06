@@ -19,9 +19,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.4.5</string>
+	<string>1.4.6</string>
 	<key>CFBundleVersion</key>
-	<string>11</string>
+	<string>12</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.utilities</string>
 	<key>LSMinimumSystemVersion</key>
@@ -34,5 +34,7 @@
 	<string>RDM-ARM — a native Apple silicon rework of RDM by Avi Alkalay. Upstream RDM carries no formal licence; this rework is provided as-is for personal use.</string>
 	<key>NSSupportsAutomaticGraphicsSwitching</key>
 	<true/>
+	<key>RDMFeedbackToken</key>
+	<string></string>
 </dict>
 </plist>
