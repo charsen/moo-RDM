@@ -19,6 +19,18 @@ cd <repo-root>
 - universal 同时包含 arm64 / x86_64。
 - 产物：`build/RDM-ARM-<version>-universal.dmg`、`build/RDM-ARM.app`。
 
+## 反馈 Token
+
+云端反馈接口的 `feedback` Token 只在构建时注入，**不提交到仓库**：
+
+```bash
+RDM_FEEDBACK_TOKEN_FILE=/secure/path/rdm-feedback-token \
+  MOO_RDM_NOTARIZE=1 MOO_RDM_NOTARY_PROFILE=moo ./build.sh --universal
+```
+
+也支持直接 `RDM_FEEDBACK_TOKEN=...`，但不要把 Token 写进脚本、README、Info.plist 模板或 Git。
+没有注入 Token 的包只能用于 `feedback_token_required=false` 的过渡期；云端开启强制 Token 后必须重新构建。
+
 ## 3. 最近构建
 
 - 日期：2026-11-04
