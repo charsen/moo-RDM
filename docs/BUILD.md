@@ -43,3 +43,5 @@ RDM_UPDATE_BASE_URL=https://c.mooeen.com \
 - 核对接口返回的版本、大小、SHA-256。
 
 `spctl -a -vv -t install build/RDM-ARM-1.4.3-universal.dmg` 必须为 accepted，`xcrun stapler validate` 必须通过；未公证不得发布。
+
+Token 来源：开发机 `/Volumes/dev/build_tokens` 中的 `RDM-ARM moo-RDM 反馈 token`。明文只用于构建，不提交、不复制到仓库。
