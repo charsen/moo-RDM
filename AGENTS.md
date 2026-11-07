@@ -1,5 +1,7 @@
 # moo-RDM 协作提醒
 
+> 规则来源：通用协作、授权、Git 与测试规则见 `~/.agents/AGENTS.md`（每轮自动加载）；Moo/Laravel 领域规则见 `~/.agents/moo.md`（涉及 scaffold/Schema/migration/Composer 时先读）。本文件只写本仓特有约束，不复制全局规则；冲突时以本文件为准。
+
 本仓是 macOS 原生 Swift/AppKit 项目。改显示、原生壳或发布流程前，先读现有 `NOTES.md`、`README.md` 和目标文件。
 
 ## 检查更新
