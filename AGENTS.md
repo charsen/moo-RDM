@@ -11,5 +11,6 @@
 ## 构建与产物
 
 构建或发版前先读 `docs/BUILD.md`。每次构建后必须核对产物路径、版本、平台/架构、文件大小、SHA-256、签名或安装验证，并把结果写回 `docs/BUILD.md` 的「最近构建」；没有核对结果不得发布。
+反馈 Token 只在构建时从开发机 `/Volumes/dev/build_tokens` 取对应标签；具体注入方式和标签见 `docs/BUILD.md`，Token 不提交、不复制进源码或日志。
 有 `scripts/verify-build.sh` 的仓，构建后必须运行并保证通过；脚本中的哈希随版本更新。
 macOS 包必须使用 Developer ID Application 签名，并完成 Apple 公证 + staple；`verify-build.sh` 必须通过 `spctl` 和 `stapler`，未公证不得发布。

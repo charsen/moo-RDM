@@ -21,6 +21,8 @@ cd <repo-root>
 
 ## 反馈 Token
 
+Token 来源：开发机 `/Volumes/dev/build_tokens` 中的 `RDM-ARM moo-RDM 反馈 token`。明文只用于构建，不提交、不复制到仓库。
+
 云端反馈接口的 `feedback` Token 只在构建时注入，**不提交到仓库**：
 
 ```bash
