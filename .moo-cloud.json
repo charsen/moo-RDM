@@ -1,0 +1,18 @@
+{
+  "role": "app",
+  "root": ".",
+  "product": "moo-rdm",
+  "project": "moo-projects",
+  "platforms": [
+    "macos"
+  ],
+  "identifiers": [
+    "com.mooeen.rdm"
+  ],
+  "verify": [
+    {
+      "file": "Resources/Info.plist",
+      "contains": "com.mooeen.rdm"
+    }
+  ]
+}
