@@ -1,13 +1,9 @@
 {
   "role": "app",
-  "root": ".",
-  "product": "moo-rdm",
   "project": "moo-projects",
+  "product": "moo-rdm",
   "platforms": [
     "macos"
-  ],
-  "identifiers": [
-    "com.mooeen.rdm"
   ],
   "verify": [
     {
