@@ -26,8 +26,8 @@ final class UpdateSettingsViewController: NSViewController {
 
         let card = NSBox()
         card.boxType = .custom
-        card.borderType = .lineBorder
-        card.borderWidth = 1
+        card.borderType = .noBorder
+        card.borderWidth = 0
         card.cornerRadius = 10
         card.contentViewMargins = NSSize(width: 18, height: 16)
         root.addArrangedSubview(card)
