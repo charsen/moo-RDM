@@ -21,19 +21,34 @@ cd <repo-root>
 - universal 同时包含 arm64 / x86_64。
 - 产物：`build/RDM-ARM-<version>-universal.dmg`、`build/RDM-ARM.app`。
 
+## 反馈 Token
+
+Token 来源：开发机 `/Volumes/dev/build_tokens` 中的 `RDM-ARM moo-RDM 反馈 token`。明文只用于构建，不提交、不复制到仓库。
+
+云端反馈接口的 `feedback` Token 只在构建时注入，**不提交到仓库**：
+
+```bash
+RDM_FEEDBACK_TOKEN_FILE=/secure/path/rdm-feedback-token \
+  MOO_RDM_NOTARIZE=1 MOO_RDM_NOTARY_PROFILE=moo ./build.sh --universal
+```
+
+也支持直接 `RDM_FEEDBACK_TOKEN=...`，但不要把 Token 写进脚本、README、Info.plist 模板或 Git。
+没有注入 Token 的包只能用于 `feedback_token_required=false` 的过渡期；云端开启强制 Token 后必须重新构建。
+
 ## 3. 最近构建
 
-- 日期：2026-11-04
-- 版本：1.4.3（build 9）
-- 文件：`build/RDM-ARM-1.4.3-universal.dmg`
-- 大小：2,796,510 字节
-- SHA-256：`3022c7d3a6c95f42b3389e5fdd6bec0394e9568454d8c42379e32009e7f39b0c`
+- 日期：2026-11-20
+- 版本：1.4.6（build 12）
+- 文件：`build/RDM-ARM-1.4.6-universal.dmg`
+- 大小：2,878,600 字节
+- SHA-256：`53d166b4e3599a30c9486b83c46ee9f3be51c94b4961f63704349b58b9fde964`
 - 架构：x86_64 arm64
+- 签名/公证：Developer ID Application（Charsen Fung S967RUU99W），notarytool Accepted，stapler 已装订；`spctl -a -vv -t install` accepted（source=Notarized Developer ID）
 
 ## 4. 验证
 
 ```bash
-hdiutil verify build/RDM-ARM-1.4.3-universal.dmg
+hdiutil verify build/RDM-ARM-1.4.6-universal.dmg
 codesign --verify --deep --strict build/RDM-ARM.app
 RDM_UPDATE_BASE_URL=https://c.mooeen.com \
   build/RDM-ARM.app/Contents/MacOS/RDM-ARM --check-update
@@ -44,6 +59,4 @@ RDM_UPDATE_BASE_URL=https://c.mooeen.com \
 - 上传 dmg 到 cloud，平台 `macos`、架构 `universal`、格式 `dmg`。
 - 核对接口返回的版本、大小、SHA-256。
 
-`spctl -a -vv -t install build/RDM-ARM-1.4.3-universal.dmg` 必须为 accepted，`xcrun stapler validate` 必须通过；未公证不得发布。
-
-Token 来源：开发机 `/Volumes/dev/build_tokens` 中的 `RDM-ARM moo-RDM 反馈 token`。明文只用于构建，不提交、不复制到仓库。
+`spctl -a -vv -t install build/RDM-ARM-1.4.6-universal.dmg` 必须为 accepted，`xcrun stapler validate` 必须通过；未公证不得发布。

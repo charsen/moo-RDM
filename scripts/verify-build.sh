@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-FILE="$ROOT/build/RDM-ARM-1.4.3-universal.dmg"
-EXPECTED_SIZE=2796510
-EXPECTED_SHA=3022c7d3a6c95f42b3389e5fdd6bec0394e9568454d8c42379e32009e7f39b0c
+FILE="$ROOT/build/RDM-ARM-1.4.6-universal.dmg"
+EXPECTED_SIZE=2878600
+EXPECTED_SHA=53d166b4e3599a30c9486b83c46ee9f3be51c94b4961f63704349b58b9fde964
 
 [[ -f "$FILE" ]] || { echo "缺少产物：$FILE" >&2; exit 1; }
 SIZE=$(stat -f%z "$FILE")
