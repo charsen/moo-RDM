@@ -2,8 +2,8 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 FILE="$ROOT/build/RDM-ARM-1.4.6-universal.dmg"
-EXPECTED_SIZE=2877100
-EXPECTED_SHA=4e8b3adc67e57eb94e7ea1f5afec0aa426ed261dd58e37d1b5bd76fd3be09cf6
+EXPECTED_SIZE=2878600
+EXPECTED_SHA=53d166b4e3599a30c9486b83c46ee9f3be51c94b4961f63704349b58b9fde964
 
 [[ -f "$FILE" ]] || { echo "缺少产物：$FILE" >&2; exit 1; }
 SIZE=$(stat -f%z "$FILE")

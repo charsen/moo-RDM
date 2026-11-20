@@ -37,12 +37,13 @@ RDM_FEEDBACK_TOKEN_FILE=/secure/path/rdm-feedback-token \
 
 ## 3. 最近构建
 
-- 日期：2026-11-04
+- 日期：2026-11-20
 - 版本：1.4.6（build 12）
 - 文件：`build/RDM-ARM-1.4.6-universal.dmg`
-- 大小：2,796,510 字节
-- SHA-256：`4e8b3adc67e57eb94e7ea1f5afec0aa426ed261dd58e37d1b5bd76fd3be09cf6`
+- 大小：2,878,600 字节
+- SHA-256：`53d166b4e3599a30c9486b83c46ee9f3be51c94b4961f63704349b58b9fde964`
 - 架构：x86_64 arm64
+- 签名/公证：Developer ID Application（Charsen Fung S967RUU99W），notarytool Accepted，stapler 已装订；`spctl -a -vv -t install` accepted（source=Notarized Developer ID）
 
 ## 4. 验证
 
